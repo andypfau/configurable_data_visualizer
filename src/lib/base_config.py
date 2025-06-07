@@ -1,10 +1,22 @@
 import json
 import logging
-from typing import Callable, Self
+import inspect
+from typing import Self, Type, Any, overload
 
 
 
 class BaseConfig:
+
+
+    class ConfigList(list):
+        
+        def __init__(self, type: Type):
+            assert issubclass(type, BaseConfig)
+            self._type: Type = type
+        
+        @property
+        def type(self) -> Type:
+            return self._type
 
 
     def __init__(self, format_version_str: str = None):
@@ -21,9 +33,7 @@ class BaseConfig:
     def load(cls, path: str) -> Self:
         with open(path, 'r') as fp:
             data = json.load(fp)
-        result = cls()
-        result._deserialize(data)
-        return result
+        return cls._deserialize(data)
 
     
     def _serialize(self) -> dict:
@@ -35,24 +45,31 @@ class BaseConfig:
         for name,value in self.__dict__.items():
             if name.startswith('_'):
                 continue
+            
             if isinstance(value, BaseConfig):
-                data[name] = value._serialize()
+                serialized = value._serialize()
+            elif isinstance(value, BaseConfig.ConfigList):
+                serialized = [elem._serialize() for elem in value]
             else:
-                data[name] = value
+                serialized = value
+            data[name] = serialized
         
         return data
 
     
-    def _deserialize(self, data: dict):
-        if self._format_version_str:
+    @classmethod
+    def _deserialize(cls, data: dict):
+        obj = cls()
+
+        if obj._format_version_str:
             if 'file_format' in data:
                 file_format_version_str = data['file_format']
-                if file_format_version_str != self._format_version_str:
-                    logging.warning(f'Expected file format "{self._format_version_str}", but loaded file contains "{file_format_version_str}", ignoring')
+                if file_format_version_str != obj._format_version_str:
+                    logging.warning(f'Expected file format "{obj._format_version_str}", but loaded file contains "{file_format_version_str}", ignoring')
             else:
-                logging.warning(f'File format not specified in loaded file (expected "{self._format_version_str}"), ignoring')
+                logging.warning(f'File format not specified in loaded file (expected "{obj._format_version_str}"), ignoring')
 
-        expected_keys = set([k for k in self.__dict__.keys() if not k.startswith('_')])
+        expected_keys = set([k for k in obj.__dict__.keys() if not k.startswith('_')])
         found_keys = set([k for k in data.keys() if k!='file_format'])
 
         missing_keys = expected_keys - found_keys
@@ -65,7 +82,16 @@ class BaseConfig:
 
         for name in used_keys:
             value = data[name]
-            if isinstance(self.__dict__[name], BaseConfig):
-                self.__dict__[name]._deserialize(value)
+            initial = obj.__dict__[name]
+            
+            if isinstance(initial, BaseConfig):
+                deserialized = initial._deserialize(value)
+            elif isinstance(initial, BaseConfig.ConfigList):
+                items = [initial.type()._deserialize(elem) for elem in value]
+                initial.extend(items)
+                deserialized = initial
             else:
-                self.__dict__[name] = value
+                deserialized = value
+            obj.__dict__[name] = deserialized
+    
+        return obj

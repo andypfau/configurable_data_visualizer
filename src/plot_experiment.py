@@ -7,6 +7,9 @@ import logging
 
 
 if __name__ == '__main__':
+
+    logging.basicConfig(level=logging.DEBUG)
+
     try:
         app = QtWidgets.QApplication(sys.argv)
         filenames = sys.argv[1:]
