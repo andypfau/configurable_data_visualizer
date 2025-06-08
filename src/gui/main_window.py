@@ -16,34 +16,35 @@ class MainWindow(MainWindowUi):
 
     def __init__(self, filenames: list[str]):
         super().__init__()
+        self.config = Config()
+        self.files: list[pathlib.Path] = []
+        self.df: pl.DataFrame = pl.DataFrame()
+        
+        self.config = Config.load('config_test.json')
+        # self._config.save('config_test1.json')
 
+        self.load_files()
+        self.uiPivotGrid().setData(self.df.columns, self.config)
+        self.update_plot()
 
-        config = Config.load('config_test.json')
-        # config = Config()
-        # config.filters.append(Config.Filter('f/GHz', Relation.GrEq, 1.5e9))
-        # config.cols_x.append(Config.Col('PSet/dBm'))
-        # config.cols_x.append(Config.Col('f/GHz'))
-        # config.cols_y.append(Config.Col('PMeas/dBm'))
-        # config.cols_group.append(Config.Col('XParam'))
-        # config.save('config_test.json')
+    
+    def load_files(self):
 
-
-        files: list[pathlib.Path] = []
-        if len(config.files.files) > 0:
-            files.extend([pathlib.Path(p) for p in config.files.files])
+        self.files.clear()
+        if len(self.config.files.files) > 0:
+            self.files.extend([pathlib.Path(p) for p in self.config.files.files])
         else:
-            rex_include = re.compile(config.files.glob_regex_include) if config.files.glob_regex_include else None
-            rex_exclude = re.compile(config.files.glob_regex_exclude) if config.files.glob_regex_exclude else None
-            for path in sorted(pathlib.Path(config.files.glob_dir).glob(config.files.glob_pattern)):
+            rex_include = re.compile(self.config.files.glob_regex_include) if self.config.files.glob_regex_include else None
+            rex_exclude = re.compile(self.config.files.glob_regex_exclude) if self.config.files.glob_regex_exclude else None
+            for path in sorted(pathlib.Path(self.config.files.glob_dir).glob(self.config.files.glob_pattern)):
                 if rex_include and not rex_include.match(path.name):
                     continue
                 if rex_exclude and rex_exclude.match(path.name):
                     continue
-                files.append(path)
-        
+                self.files.append(path)
         
         dfs = []
-        for path in files:
+        for path in self.files:
             try:
                 logging.info(f'Loading <{path}>')
                 comment_list = []
@@ -61,29 +62,38 @@ class MainWindow(MainWindowUi):
                 dfs.append(df)
             except Exception as ex:
                 logging.error(f'Loading <{path}> failed ({ex})')
-        df: pl.DataFrame = pl.concat(dfs)
-        df = df.with_row_index(name='_row_id', offset=1)
+        if len(dfs) == 1:
+            self.df = dfs[0]
+        elif len(dfs) > 1:
+            self.df = pl.concat(dfs)
+        else:
+            self.df = pl.DataFrame()
+        self.df = self.df.with_row_index(name='_row_id', offset=1)
 
-        all_cols = df.columns
+
+    def update_plot(self):
+
+        all_cols = self.df.columns
         
-        sort_cols = [col.col for col in config.sort if col.col in all_cols]
-        sort_desc = [col.descending for col in config.sort if col.col in all_cols]
-        df = df.sort(by=sort_cols, descending=sort_desc)
+        sort_cols = [col.col for col in self.config.sort if col.col in all_cols]
+        sort_desc = [col.descending for col in self.config.sort if col.col in all_cols]
+        self.df = self.df.sort(by=sort_cols, descending=sort_desc)
 
         # TODO: more checks!
-        invalid_x_cols = [col.col for col in config.cols_x if col.col not in all_cols]
+        invalid_x_cols = [col.col for col in self.config.cols_x if col.col not in all_cols]
         if len(invalid_x_cols) > 0:
             logging.error(f'Invalid X cols: {invalid_x_cols}')
-        invalid_y_cols = [col.col for col in config.cols_y if col.col not in all_cols]
+        invalid_y_cols = [col.col for col in self.config.cols_y if col.col not in all_cols]
         if len(invalid_y_cols) > 0:
             logging.error(f'Invalid X cols: {invalid_y_cols}')
-        invalid_group_cols = [col.col for col in config.cols_group if col.col not in all_cols]
+        invalid_group_cols = [col.col for col in self.config.cols_group if col.col not in all_cols]
         if len(invalid_group_cols) > 0:
             logging.error(f'Invalid group cols: {invalid_group_cols}')
 
-        group_cols = [col.col for col in config.cols_group if col.col in all_cols and col.active]
-        x_cols = [col.col for col in config.cols_x if col.col in all_cols and col.active and col.col not in group_cols]
-        y_cols = [col.col for col in config.cols_y if col.col in all_cols and col.active]
+        group_cols = [col.col for col in self.config.cols_group if col.col in all_cols and col.active]
+        x_cols = [col.col for col in self.config.cols_x if col.col in all_cols and col.active and col.col not in group_cols]
+        y_cols = [col.col for col in self.config.cols_y if col.col in all_cols and col.active]
+        color_cols = [col.col for col in self.config.cols_color if col.col in all_cols and col.active]
         
         color_map = {}
         def get_color_from_swatch(key):
@@ -110,7 +120,7 @@ class MainWindow(MainWindowUi):
                     unique = False
             else:
                 x = [dfg.get_column(x_col).to_numpy() for x_col in x_cols]
-                n_total = np.maximum(*[len(x1) for x1 in x])
+                n_total = max(*[len(x1) for x1 in x])
                 n_unique_per_group = [len(np.unique(x1)) for x1 in x]
                 n_expected_total = np.prod(n_unique_per_group)
                 if n_total > n_expected_total:
@@ -135,13 +145,14 @@ class MainWindow(MainWindowUi):
                 common_color = None
                 individual_colors = None
 
-                if config.col_color.active and config.col_color.col in all_cols:
-                    color_values = dfg.get_column(config.col_color.col)
+                for color_col in color_cols:
+                    color_values = dfg.get_column(self.config.col_color.col)
                     if len(set(color_values)) == 1:
                         common_color = get_color_from_swatch(color_values[0])
                     else:
                         unique = False
                         individual_colors = [get_color_from_swatch(elem) for elem in color_values]
+                    break # only allow one
 
                 line = dict()
                 marker = dict()
@@ -157,10 +168,14 @@ class MainWindow(MainWindowUi):
                 fig.add_trace(go.Scatter(x=x, y=y, name=legend, mode=mode, text=text, line=line, marker=marker))
 
         if len(group_cols) >= 1:
-            for group_tuple,dfg in df.group_by(group_cols, maintain_order=True):
+            for group_tuple,dfg in self.df.group_by(group_cols, maintain_order=True):
                 plot_group(group_tuple, dfg)
         else:
-            plot_group(tuple(), df.clone())
+            plot_group(tuple(), self.df.clone())
 
-        fig.update_layout(xaxis_title=config.plot.x_title, yaxis_title=config.plot.y_title)
+        fig.update_layout(xaxis_title=self.config.plot.x_title, yaxis_title=self.config.plot.y_title)
         self.uiPlot(fig)
+
+
+    def on_pivot_change(self):
+        self.update_plot()

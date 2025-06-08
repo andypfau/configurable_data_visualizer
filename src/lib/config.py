@@ -39,14 +39,13 @@ class Config(BaseConfig):
         def __init__(self):
             super().__init__()
 
-            self.fields: list[str] = []
             self.x_title: str = 'X'
             self.y_title: str = 'Y'
 
 
-    class Filter(BaseConfig):
+    class ColFilter(BaseConfig):
         
-        def __init__(self, col: str = '', rel: Relation = Relation.Eq, value: Any = 0, value2: Any = 0, active: bool = True):
+        def __init__(self, col: str = '', rel: Relation = Relation.Eq, value: Any = 0, value2: Any = 0, active: bool = True, expression: str = ''):
             super().__init__()
 
             self.active: bool = active
@@ -54,19 +53,19 @@ class Config(BaseConfig):
             self.rel: Relation = rel
             self.value: Any = value
             self.value2: Any = value2
+            self.expression: str = expression
 
 
-    class Col(BaseConfig):
+    class PlotCol(BaseConfig):
         
         def __init__(self, col: str = '', unit: str = '', active: bool = True):
             super().__init__()
 
             self.active: bool = active
             self.col: str = col
-            self.unit: str = ''
 
 
-    class Sort(BaseConfig):
+    class SortCol(BaseConfig):
         
         def __init__(self, col: str = '', descending: bool = False):
             super().__init__()
@@ -79,10 +78,10 @@ class Config(BaseConfig):
         super().__init__(format_version_str='Plot Experiment Config v0.1')
         
         self.files = Config.Files()
-        self.sort: list[Config.Sort] = BaseConfig.ConfigList(Config.Sort)
-        self.cols_group = BaseConfig.ConfigList[Config.Col](Config.Col)
-        self.cols_x = BaseConfig.ConfigList[Config.Col](Config.Col)
-        self.cols_y = BaseConfig.ConfigList[Config.Col](Config.Col)
-        self.filters = BaseConfig.ConfigList[Config.Filter](Config.Filter)
-        self.col_color = Config.Col()
+        self.sort: list[Config.SortCol] = BaseConfig.ConfigList(Config.SortCol)
+        self.filters: list[Config.ColFilter] = BaseConfig.ConfigList[Config.ColFilter](Config.ColFilter)
+        self.cols_group: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
+        self.cols_x: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
+        self.cols_y: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
+        self.cols_color: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
         self.plot = Config.Plot()
