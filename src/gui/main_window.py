@@ -1,5 +1,5 @@
 from .main_window_ui import MainWindowUi
-from lib.config import Config, Relation
+from lib.config import Config, Relation, Sort
 
 import os, pathlib
 import sys
@@ -21,9 +21,10 @@ class MainWindow(MainWindowUi):
         self.df: pl.DataFrame = pl.DataFrame()
         
         self.config = Config.load('config_test.json')
-        # self._config.save('config_test1.json')
+        # self.config.save('config_test1.json')
 
         self.load_files()
+        self.apply_filters()
         self.uiPivotGrid().setData(self.df.columns, self.config)
         self.update_plot()
 
@@ -71,13 +72,35 @@ class MainWindow(MainWindowUi):
         self.df = self.df.with_row_index(name='_row_id', offset=1)
 
 
+    def apply_filters(self):
+
+        predicates = None
+        for f in self.config.filters:
+            if f.col not in self.df.columns:
+                continue
+            match f.rel:
+                case Relation.Equal: predicate = pl.col(f.col)==f.value
+                case Relation.NotEqual: predicate = pl.col(f.col)!=f.value
+                case Relation.Greater: predicate = pl.col(f.col)>f.value
+                case Relation.GreaterOrEqual: predicate = pl.col(f.col)>=f.value
+                case Relation.Less: predicate = pl.col(f.col)<f.value
+                case Relation.LessOrEqual: predicate = pl.col(f.col)<=f.value
+                case Relation.In: predicate = pl.col(f.col).is_between(f.value,f.value2,closed=True)
+                case Relation.NotIn: predicate = ~pl.col(f.col).is_between(f.value,f.value2,closed=True)
+                case _: raise ValueError()
+
+            if predicates is None:
+                predicates = predicate
+            else:
+                predicates = predicates & (predicate)
+
+        if predicates is not None:
+            self.df = self.df.filter(predicates)
+
+
     def update_plot(self):
 
         all_cols = self.df.columns
-        
-        sort_cols = [col.col for col in self.config.sort if col.col in all_cols]
-        sort_desc = [col.descending for col in self.config.sort if col.col in all_cols]
-        self.df = self.df.sort(by=sort_cols, descending=sort_desc)
 
         # TODO: more checks!
         invalid_x_cols = [col.col for col in self.config.cols_x if col.col not in all_cols]
@@ -90,10 +113,21 @@ class MainWindow(MainWindowUi):
         if len(invalid_group_cols) > 0:
             logging.error(f'Invalid group cols: {invalid_group_cols}')
 
+
+        sort_cols, sort_desc = [], []
+        for col in [*self.config.cols_group, *self.config.cols_color, *self.config.cols_x]:
+            if (col.col not in all_cols) or (not col.active) or (col.sort == Sort.Off):
+                continue
+            sort_cols.append(col.col)
+            sort_desc.append(col.sort == Sort.Desc)
+        if len(sort_cols) >= 1:
+            self.df = self.df.sort(by=sort_cols, descending=sort_desc)
+
+
         group_cols = [col.col for col in self.config.cols_group if col.col in all_cols and col.active]
+        color_cols = [col.col for col in self.config.cols_color if col.col in all_cols and col.active]
         x_cols = [col.col for col in self.config.cols_x if col.col in all_cols and col.active and col.col not in group_cols]
         y_cols = [col.col for col in self.config.cols_y if col.col in all_cols and col.active]
-        color_cols = [col.col for col in self.config.cols_color if col.col in all_cols and col.active]
         
         color_map = {}
         def get_color_from_swatch(key):
@@ -146,7 +180,7 @@ class MainWindow(MainWindowUi):
                 individual_colors = None
 
                 for color_col in color_cols:
-                    color_values = dfg.get_column(self.config.col_color.col)
+                    color_values = dfg.get_column(color_col)
                     if len(set(color_values)) == 1:
                         common_color = get_color_from_swatch(color_values[0])
                     else:
@@ -178,4 +212,5 @@ class MainWindow(MainWindowUi):
 
 
     def on_pivot_change(self):
+        self.apply_filters()
         self.update_plot()

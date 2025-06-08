@@ -8,14 +8,21 @@ from typing import Any
 
 
 class Relation(enum.StrEnum):
-    Eq = enum.auto()
-    NEq = enum.auto()
-    Gr = enum.auto()
-    GrEq = enum.auto()
-    Le = enum.auto()
-    LeEq = enum.auto()
-    In = enum.auto()
-    NIn = enum.auto()
+    Equal = '=='
+    NotEqual = '!='
+    Greater = '>'
+    GreaterOrEqual = '>='
+    Less = '<'
+    LessOrEqual = '<='
+    In = 'in'
+    NotIn = 'not in'
+
+
+
+class Sort(enum.StrEnum):
+    Off = 'off'
+    Asc = 'ascending'
+    Desc = 'descending'
 
 
 
@@ -43,9 +50,9 @@ class Config(BaseConfig):
             self.y_title: str = 'Y'
 
 
-    class ColFilter(BaseConfig):
+    class Filter(BaseConfig):
         
-        def __init__(self, col: str = '', rel: Relation = Relation.Eq, value: Any = 0, value2: Any = 0, active: bool = True, expression: str = ''):
+        def __init__(self, col: str = '', rel: Relation = Relation.Equal, value: Any = 0, value2: Any = 0, active: bool = True, expression: str = ''):
             super().__init__()
 
             self.active: bool = active
@@ -54,34 +61,56 @@ class Config(BaseConfig):
             self.value: Any = value
             self.value2: Any = value2
             self.expression: str = expression
+        
+        def as_str(self, max_len: int = 25) -> str:
+            if self.expression:
+                if len(self.expression) > max_len - 1:
+                    return self.expression[:max_len-1] + '…'
+                else:
+                    return self.expression
+            else:
+                value_str = f'{self.value:.5g}' if isinstance(self.value,(int,float)) else str(self.value)
+                value2_str = f'{self.value2:.5g}' if isinstance(self.value2,(int,float)) else str(self.value2)
+                match self.rel:
+                    case Relation.Equal: return f'= {value_str}'
+                    case Relation.NotEqual: return f'≠ {value_str}'
+                    case Relation.Greater: return f'> {value_str}'
+                    case Relation.GreaterOrEqual: return f'≥ {value_str}'
+                    case Relation.Less: return f'< {value_str}'
+                    case Relation.LessOrEqual: return f'≤ {value_str}'
+                    case Relation.In: return f'{value_str}..{value2_str}'
+                    case Relation.NotIn: return f'!{value_str}..{value2_str}'
+            raise RuntimeError()
+
 
 
     class PlotCol(BaseConfig):
         
-        def __init__(self, col: str = '', unit: str = '', active: bool = True):
+        def __init__(self, col: str = '', active: bool = True):
             super().__init__()
 
             self.active: bool = active
             self.col: str = col
 
 
-    class SortCol(BaseConfig):
+
+    class SortablePlotCol(BaseConfig):
         
-        def __init__(self, col: str = '', descending: bool = False):
+        def __init__(self, col: str = '', sort: Sort = Sort.Off, active: bool = True):
             super().__init__()
 
+            self.active: bool = active
             self.col: str = col
-            self.descending: bool = descending
+            self.sort: Sort = sort
 
 
     def __init__(self):
         super().__init__(format_version_str='Plot Experiment Config v0.1')
         
         self.files = Config.Files()
-        self.sort: list[Config.SortCol] = BaseConfig.ConfigList(Config.SortCol)
-        self.filters: list[Config.ColFilter] = BaseConfig.ConfigList[Config.ColFilter](Config.ColFilter)
-        self.cols_group: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
-        self.cols_x: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
+        self.filters: list[Config.Filter] = BaseConfig.ConfigList[Config.Filter](Config.Filter)
+        self.cols_group: list[Config.SortablePlotCol] = BaseConfig.ConfigList[Config.SortablePlotCol](Config.SortablePlotCol)
+        self.cols_color: list[Config.SortablePlotCol] = BaseConfig.ConfigList[Config.SortablePlotCol](Config.SortablePlotCol)
+        self.cols_x: list[Config.SortablePlotCol] = BaseConfig.ConfigList[Config.SortablePlotCol](Config.SortablePlotCol)
         self.cols_y: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
-        self.cols_color: list[Config.PlotCol] = BaseConfig.ConfigList[Config.PlotCol](Config.PlotCol)
         self.plot = Config.Plot()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..helpers.qt_helper import QtHelper
-from lib.config import Config
+from lib.config import Config, Sort
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import *
@@ -26,9 +26,9 @@ class PivotGrid(QWidget):
     userChange = pyqtSignal()
     
     
-    MIME_ANYCOL = 'application/x-pivot-column'
-    MIME_PLOTCOL = 'application/x-pivot-plot-column'
-    MIME_SORTCOL = 'application/x-pivot-sort-column'
+    MIME_ANY_COL = 'application/x-pivot-column'
+    MIME_PLOT_COL = 'application/x-pivot-plot-column'
+    MIME_SORTABLE_PLOT_COL = 'application/x-pivot-sortable-plot-column'
     MIME_FILTER = 'application/x-pivot-filter-column'
 
 
@@ -44,6 +44,9 @@ class PivotGrid(QWidget):
             if isinstance(other, PivotGrid.AbstractItem):
                 return self.col_name() == other.col_name()
             return super().__eq__(self)
+    
+        def get_context_menu(self) -> QMenu|None:
+            return None
 
 
     class AnyColItem(AbstractItem):
@@ -51,6 +54,7 @@ class PivotGrid(QWidget):
         def __init__(self, col: str):
             super().__init__()
             self.col = col
+            self.setData(Qt.ItemDataRole.UserRole, col)
             self.update_item()
         
         def update_item(self):
@@ -65,6 +69,13 @@ class PivotGrid(QWidget):
         def __init__(self, col: Config.PlotCol):
             super().__init__()
             self.col = col
+            self.setData(Qt.ItemDataRole.UserRole, col)
+            self._ui_context_menu = QMenu()
+            def active_changed():
+                self.col.active = self._ui_active_item.isChecked()
+                self.setData(Qt.ItemDataRole.UserRole, None)
+                self.setData(Qt.ItemDataRole.UserRole, self.col)
+            self._ui_active_item = QtHelper.add_menuitem(self._ui_context_menu, 'Active', active_changed, checked=self.col.active)
             self.update_item()
         
         def update_item(self):
@@ -75,14 +86,25 @@ class PivotGrid(QWidget):
                 self.setForeground(QtHelper.get_palette_color(QPalette.ColorRole.Dark))
         
         def col_name(self) -> str:
-            return self.col_name()
+            return self.col.col
+        
+        def get_context_menu(self) -> QMenu|None:
+            return self._ui_context_menu
 
 
     class FilterColItem(AbstractItem):
 
-        def __init__(self, col: Config.ColFilter):
+        def __init__(self, col: Config.Filter):
             super().__init__()
             self.col = col
+            self.setData(Qt.ItemDataRole.UserRole, col)
+            self.update_item()
+            self._ui_context_menu = QMenu()
+            def active_changed():
+                self.col.active = self._ui_active_item.isChecked()
+                self.setData(Qt.ItemDataRole.UserRole, None)
+                self.setData(Qt.ItemDataRole.UserRole, self.col)
+            self._ui_active_item = QtHelper.add_menuitem(self._ui_context_menu, 'Active', active_changed, checked=self.col.active)
             self.update_item()
         
         def update_item(self):
@@ -93,23 +115,92 @@ class PivotGrid(QWidget):
                 self.setForeground(QtHelper.get_palette_color(QPalette.ColorRole.Dark))
         
         def col_name(self) -> str:
-            return self.col_name()
+            return self.col.col
+        
+        def get_context_menu(self) -> QMenu|None:
+            return self._ui_context_menu
 
 
-    class SortColItem(AbstractItem):
+    class SortablePlotColItem(AbstractItem):
 
-        def __init__(self, col: Config.SortCol):
+        def __init__(self, col: Config.SortablePlotCol):
             super().__init__()
             self.col = col
+            self.setData(Qt.ItemDataRole.UserRole, col)
             self.update_item()
-        
+            self._ui_context_menu = QMenu()
+            def active_changed():
+                self.col.active = self._ui_active_item.isChecked()
+                self.setData(Qt.ItemDataRole.UserRole, None)
+                self.setData(Qt.ItemDataRole.UserRole, self.col)
+            self._ui_active_item = QtHelper.add_menuitem(self._ui_context_menu, 'Active', active_changed, checked=self.col.active)
+            self.update_item()
+      
         def update_item(self):
             self.setText(self.col.col)
         
         def col_name(self) -> str:
-            return self.col_name()
+            return self.col.col
+        
+        def get_context_menu(self) -> QMenu|None:
+            return self._ui_context_menu
 
     
+
+    class ItemDelegate(QStyledItemDelegate):
+        
+        def paint(self, painter: QtGui.QPainter, option: QStyleOptionViewItem, index: QtCore.QModelIndex):
+            item = index.data(Qt.ItemDataRole.UserRole)
+            if isinstance(item, (Config.PlotCol, Config.SortablePlotCol, Config.Filter)):
+                text = item.col
+                text2 = None
+                active = item.active
+                if isinstance(item, Config.SortablePlotCol):
+                    if item.sort == Sort.Asc:
+                        text2 = 'Sort ↓'
+                    elif item.sort == Sort.Desc:
+                        text2 = 'Sort ↑'
+                elif isinstance(item, Config.Filter):
+                    text2 = item.as_str()
+            elif isinstance(item, str):
+                text = item
+                text2 = None
+                active = False
+
+            painter.save()
+
+            if option.state & QStyle.StateFlag.State_Selected:
+                painter.fillRect(option.rect, option.palette.highlight())
+
+
+            outline_rect = QRect(option.rect)
+            outline_rect.adjust(2, 2, -2, -2)
+            painter.setPen(QColorConstants.Black if active else QColorConstants.DarkGray)
+            painter.setBrush(QColorConstants.Green.lighter(190) if active else QColorConstants.LightGray)
+            painter.drawRoundedRect(outline_rect, 2.0, 2.0)
+
+            text_rect = QRect(option.rect)
+            text_rect.adjust(8, 2, -8, -2)
+            painter.setPen(QColorConstants.Black if active else QColorConstants.DarkGray)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignTop, text)
+            if text2:
+                text_rect = QRect(option.rect)
+                text_rect.adjust(8, 2, -8, -2)
+                painter.setPen(QColorConstants.DarkGray)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignBottom, text2)
+
+            painter.restore()
+
+
+        def sizeHint(self, option: QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
+            if option.widget and isinstance(option.widget, QListWidget):
+                available_width = option.widget.viewport().width()
+            else:
+                available_width = option.rect.width()
+            return QSize(available_width, 40)
+            
+            
+        
     class AbstractListWidget(QListWidget):
 
 
@@ -124,7 +215,11 @@ class PivotGrid(QWidget):
             self.setDropIndicatorShown(True)
             self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
             self.setDefaultDropAction(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
-        
+            self.setItemDelegate(PivotGrid.ItemDelegate())
+            self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.customContextMenuRequested.connect(self.show_context_menu)
+            self.model().dataChanged.connect(self.userChange)
+
 
         def get_all_items(self) -> list[PivotGrid.AbstractItem]:
             return [self.item(row) for row in range(self.count())]
@@ -136,28 +231,26 @@ class PivotGrid(QWidget):
             super().mousePressEvent(event)
         
 
-        def pack_mimedata(self, item: QListWidgetItem) -> QMimeData:
+        def pack_mimedata(self, item: PivotGrid.AbstractItem) -> QMimeData:
             data = QMimeData()
             if isinstance(item, PivotGrid.PlotColItem):
-                data.setData(PivotGrid.MIME_PLOTCOL, pickle.dumps(item.col))
-            elif isinstance(item, PivotGrid.SortColItem):
-                data.setData(PivotGrid.MIME_SORTCOL, pickle.dumps(item.col))
+                data.setData(PivotGrid.MIME_PLOT_COL, pickle.dumps(item.col))
+            elif isinstance(item, PivotGrid.SortablePlotColItem):
+                data.setData(PivotGrid.MIME_SORTABLE_PLOT_COL, pickle.dumps(item.col))
             elif isinstance(item, PivotGrid.FilterColItem):
                 data.setData(PivotGrid.MIME_FILTER, pickle.dumps(item.col))
-            elif isinstance(item, QListWidgetItem):
-                data.setData(PivotGrid.MIME_ANYCOL, pickle.dumps(item.text()))
             else:
-                raise ValueError()
+                data.setData(PivotGrid.MIME_ANY_COL, pickle.dumps(item.text()))
             return data
 
 
-        def unpack_mimedata(self, data: QMimeData) -> QListWidgetItem:
-            if data.hasFormat(PivotGrid.MIME_ANYCOL):
-                return QListWidgetItem(pickle.loads(data.data(PivotGrid.MIME_ANYCOL)))
-            elif data.hasFormat(PivotGrid.MIME_PLOTCOL):
-                return PivotGrid.PlotColItem(pickle.loads(data.data(PivotGrid.MIME_PLOTCOL)))
-            elif data.hasFormat(PivotGrid.MIME_SORTCOL):
-                return PivotGrid.SortColItem(pickle.loads(data.data(PivotGrid.MIME_SORTCOL)))
+        def unpack_mimedata(self, data: QMimeData) -> PivotGrid.AbstractItem:
+            if data.hasFormat(PivotGrid.MIME_ANY_COL):
+                return PivotGrid.AnyColItem(pickle.loads(data.data(PivotGrid.MIME_ANY_COL)))
+            elif data.hasFormat(PivotGrid.MIME_PLOT_COL):
+                return PivotGrid.PlotColItem(pickle.loads(data.data(PivotGrid.MIME_PLOT_COL)))
+            elif data.hasFormat(PivotGrid.MIME_SORTABLE_PLOT_COL):
+                return PivotGrid.SortablePlotColItem(pickle.loads(data.data(PivotGrid.MIME_SORTABLE_PLOT_COL)))
             elif data.hasFormat(PivotGrid.MIME_FILTER):
                 return PivotGrid.FilterColItem(pickle.loads(data.data(PivotGrid.MIME_FILTER)))
             raise ValueError()
@@ -182,9 +275,14 @@ class PivotGrid(QWidget):
             if event.mimeData():
                 item = self.unpack_mimedata(event.mimeData())
                 action = self.handle_drag(item)
-                event.setDropAction(action)
-                if action != Qt.DropAction.IgnoreAction:
-                    event.accept()
+                if action == Qt.DropAction.CopyAction:
+                    event.setDropAction(Qt.DropAction.CopyAction)
+                    event.acceptProposedAction()
+                    self.setCursor(QtCore.Qt.CursorShape.DragCopyCursor)  # TODO: changing cursor shapes doesn't work as expected
+                elif action == Qt.DropAction.MoveAction:
+                    event.setDropAction(Qt.DropAction.MoveAction)
+                    event.acceptProposedAction()
+                    self.setCursor(QtCore.Qt.CursorShape.DragMoveCursor)
                 self.setDropIndicatorShown(True)
                 return
             event.ignore()
@@ -217,74 +315,97 @@ class PivotGrid(QWidget):
             self.userChange.emit()
         
 
-        def handle_drag(self, item: QListWidgetItem) -> Qt.DropAction:
+        def handle_drag(self, item: PivotGrid.AbstractItem) -> Qt.DropAction:
             return Qt.DropAction.IgnoreAction
 
 
-        def handle_source_drop(self, item: QListWidgetItem, row: int, move: bool):
+        def handle_source_drop(self, item: PivotGrid.AbstractItem, row: int, move: bool):
             pass
 
 
-        def handle_target_drop(self, item: QListWidgetItem, row: int) -> bool:
+        def handle_target_drop(self, item: PivotGrid.AbstractItem, row: int) -> bool:
             return False
+        
+
+        def show_context_menu(self, pos: QPoint):
+            item = self.itemAt(pos)
+            if (not item) or (not isinstance(item, PivotGrid.AbstractItem)):
+                return
+            menu = item.get_context_menu()
+            if not menu:
+                return
+            menu.exec(self.mapToGlobal(pos))
+        
+
+        def make_context_menu(self, item: PivotGrid.AbstractItem) -> QMenu|None:
+            return None
+
 
 
     class FilterColListWidget(AbstractListWidget):
 
-        def handle_drag(self, item: QListWidgetItem) -> Qt.DropAction:
+        def handle_drag(self, item: PivotGrid.AbstractItem) -> Qt.DropAction:
             return Qt.DropAction.CopyAction
 
-        def handle_source_drop(self, item: QListWidgetItem, row: int, move: bool):
+        def handle_source_drop(self, item: PivotGrid.AbstractItem, row: int, move: bool):
             if move:
                 self.model().removeRow(row)
 
-        def handle_target_drop(self, item: QListWidgetItem, row: int) -> bool:
-            item = PivotGrid.FilterColItem(Config.ColFilter(item.text()))
+        def handle_target_drop(self, item: PivotGrid.AbstractItem, row: int) -> bool:
+            item = PivotGrid.FilterColItem(Config.Filter(item.col_name()))
             self.insertItem(row, item)
             return True
 
 
     class PlotColListWidget(AbstractListWidget):
 
-        def handle_drag(self, item: QListWidgetItem) -> Qt.DropAction:
+        def handle_drag(self, item: PivotGrid.AbstractItem) -> Qt.DropAction:
             if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
                 return Qt.DropAction.CopyAction
             else:
                 return Qt.DropAction.MoveAction
 
-        def handle_source_drop(self, item: QListWidgetItem, row: int, move: bool):
+        def handle_source_drop(self, item: PivotGrid.AbstractItem, row: int, move: bool):
             if move:
                 self.model().removeRow(row)
 
-        def handle_target_drop(self, item: QListWidgetItem, row: int) -> bool:
-            item = PivotGrid.PlotColItem(Config.PlotCol(item.text()))
+        def handle_target_drop(self, item: PivotGrid.AbstractItem, row: int) -> bool:
+            item = PivotGrid.PlotColItem(Config.PlotCol(item.col_name()))
             self.insertItem(row, item)
             return True
 
 
-    class SortColListWidget(AbstractListWidget):
+    class SortablePlotColListWidget(AbstractListWidget):
 
-        def dropHandler(self, item: QListWidgetItem, row: int) -> bool:
-            if isinstance(item, PivotGrid.PlotColItem):
-                pass
-            elif isinstance(item, QListWidgetItem):
-                pass
+        def handle_drag(self, item: PivotGrid.AbstractItem) -> Qt.DropAction:
+            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
+                return Qt.DropAction.CopyAction
             else:
-                return False
+                return Qt.DropAction.MoveAction
+
+        def handle_source_drop(self, item: PivotGrid.AbstractItem, row: int, move: bool):
+            if move:
+                self.model().removeRow(row)
+
+        def handle_target_drop(self, item: PivotGrid.AbstractItem, row: int) -> bool:
+            item = PivotGrid.SortablePlotColItem(Config.SortablePlotCol(item.col_name()))
             self.insertItem(row, item)
             return True
 
 
     class AnyColListWidget(AbstractListWidget):
 
-        def handle_drag(self, item: QListWidgetItem) -> Qt.DropAction:
+        def handle_drag(self, item: PivotGrid.AbstractItem) -> Qt.DropAction:
             return Qt.DropAction.MoveAction
 
-        def handle_source_drop(self, item: QListWidgetItem, row: int, move: bool):
-            pass
+        def handle_source_drop(self, item: PivotGrid.AbstractItem, row: int, move: bool):
+            pass  # do never remove item
 
-        def handle_target_drop(self, item: QListWidgetItem, row: int) -> bool:
+        def handle_target_drop(self, item: PivotGrid.AbstractItem, row: int) -> bool:
             return True
+        
+        def make_context_menu(self, item: PivotGrid.AbstractItem) -> QMenu|None:
+            return None  # no context menu
         
 
     def __init__(self, parent: QWidget = None):
@@ -295,39 +416,30 @@ class PivotGrid(QWidget):
 
         self._ui_all_list = PivotGrid.AnyColListWidget()
         self._ui_all_list.userChange.connect(self._on_user_change)
-        self._ui_x_list = PivotGrid.PlotColListWidget()
+        self._ui_x_list = PivotGrid.SortablePlotColListWidget()
         self._ui_x_list.userChange.connect(self._on_user_change)
         self._ui_y_list = PivotGrid.PlotColListWidget()
         self._ui_y_list.userChange.connect(self._on_user_change)
-        self._ui_group_list = PivotGrid.PlotColListWidget()
+        self._ui_group_list = PivotGrid.SortablePlotColListWidget()
         self._ui_group_list.userChange.connect(self._on_user_change)
-        self._ui_sort_list = PivotGrid.SortColListWidget()
-        self._ui_sort_list.userChange.connect(self._on_user_change)
         self._ui_filter_list = PivotGrid.FilterColListWidget()
         self._ui_filter_list.userChange.connect(self._on_user_change)
-        self._ui_color_list = PivotGrid.PlotColListWidget()
+        self._ui_color_list = PivotGrid.SortablePlotColListWidget()
         self._ui_color_list.userChange.connect(self._on_user_change)
 
         self.setLayout(QtHelper.layout_grid(
             [
                 [
-                    QtHelper.CellSpan(
-                        QtHelper.layout_v('All Columns', self._ui_all_list),
-                        rows=2
-                    ),
+                    QtHelper.layout_v('All Columns', self._ui_all_list),
                     QtHelper.layout_v('Filter', self._ui_filter_list),
-                ],
-                [
-                    None,
-                    QtHelper.layout_v('Sort', self._ui_sort_list),
                 ],
                 [
                     QtHelper.layout_v('Group', self._ui_group_list),
                     QtHelper.layout_v('Color', self._ui_color_list),
                 ],
                 [
-                    QtHelper.layout_v('X', self._ui_x_list),
-                    QtHelper.layout_v('Y', self._ui_y_list),
+                    QtHelper.layout_v('X-Axis', self._ui_x_list),
+                    QtHelper.layout_v('Y-Axis', self._ui_y_list),
                 ],
             ]
         ))
@@ -345,23 +457,19 @@ class PivotGrid(QWidget):
     def _update_lists(self):
         self._ui_all_list.clear()
         for col in sorted(self._all_columns):
-            self._ui_all_list.addItem(col)
+            self._ui_all_list.addItem(PivotGrid.AnyColItem(col))
         
         self._ui_filter_list.clear()
         for col in self._config.filters:
             self._ui_filter_list.addItem(PivotGrid.FilterColItem(col))
         
-        self._ui_sort_list.clear()
-        for col in self._config.sort:
-            self._ui_sort_list.addItem(PivotGrid.SortColItem(col))
-        
         self._ui_group_list.clear()
         for col in self._config.cols_group:
-            self._ui_group_list.addItem(PivotGrid.PlotColItem(col))
+            self._ui_group_list.addItem(PivotGrid.SortablePlotColItem(col))
         
         self._ui_x_list.clear()
         for col in self._config.cols_x:
-            self._ui_x_list.addItem(PivotGrid.PlotColItem(col))
+            self._ui_x_list.addItem(PivotGrid.SortablePlotColItem(col))
         
         self._ui_y_list.clear()
         for col in self._config.cols_y:
@@ -369,17 +477,13 @@ class PivotGrid(QWidget):
         
         self._ui_color_list.clear()
         for col in self._config.cols_color:
-            self._ui_color_list.addItem(PivotGrid.PlotColItem(col))
+            self._ui_color_list.addItem(PivotGrid.SortablePlotColItem(col))
 
 
     def _on_user_change(self):
         self._config.filters.clear()
         for item in self._ui_filter_list.get_all_items():
             self._config.filters.append(item.col)
-
-        self._config.sort.clear()
-        for item in self._ui_sort_list.get_all_items():
-            self._config.sort.append(item.col)
 
         self._config.cols_x.clear()
         for item in self._ui_x_list.get_all_items():
