@@ -201,15 +201,14 @@ class QtHelper:
 
 
     @staticmethod
-    def add_menuitem(menu: QMenu, text: str, action: Callable, *, shortcut: str = None, visible: bool = True, checked: bool|None = None, bold: bool = False) -> QAction:
+    def add_menuitem(menu: QMenu, text: str, action: Callable, *, shortcut: str = None, visible: bool = True, checkable: bool = False, bold: bool = False) -> QAction:
         item = QAction(text, menu)
         if action is not None:
             item.triggered.connect(action)
         if shortcut is not None:
             item.setShortcut(QKeySequence(shortcut))
-        if checked is not None:
+        if checkable:
             item.setCheckable(True)
-            item.setChecked(checked)
         if not visible:
             item.setVisible(False)
         if bold:

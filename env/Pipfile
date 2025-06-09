@@ -14,6 +14,7 @@ openpyxl = "*"
 polars = "*"
 pyinstaller = "*"
 pyqt6-webengine = "*"
+dash = "*"
 
 [dev-packages]
 
