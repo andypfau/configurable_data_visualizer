@@ -7,5 +7,5 @@ import polars
 
 c = Config()
 print(hash(c))
-c.columns = ['a']
+c.all_columns = ['a']
 print(hash(c))

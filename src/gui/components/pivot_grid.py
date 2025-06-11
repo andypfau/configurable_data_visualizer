@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from ..helpers.qt_helper import QtHelper
-from lib.config import Config, Sort, ConfigColumnSetup, ConfigFilter, FilterMode, ColumnRole
+from ..filter_dialog import FilterDialog
+from lib.config import Config, Sort, ConfigColumnSetup, ConfigFilter, FilterMode, ColumnRole, ColumnSwitch
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import *
@@ -29,20 +30,17 @@ class PivotGrid(QWidget):
     class ColumnItem(QListWidgetItem):
 
 
-        def __init__(self, col: str, config: Config, role: ColumnRole):
+        def __init__(self, col: str, config: Config, role: ColumnRole, parent_dialog: QWidget):
             super().__init__()
-            self._col = col
+            self.col = col
             self._config = config
             self._role = role
+            self._parent_dialog = parent_dialog
 
             self._ui_context_menu = QMenu()
             self._add_contextmenu_items_at_beginning()
             def active_changed():
-                self._setup().assignment |= self._role
-                if self._ui_active_item.isChecked():
-                    self._setup().activation |= self._role
-                else:
-                    self._setup().activation &= ~self._role
+                self._config.set_role(self.col, self._role, self._ui_active_item.isChecked())
                 self._update_data()
             def sort_asc_changed():
                 self._setup().sort = Sort.Asc if self._ui_sort_asc.isChecked() else Sort.Off
@@ -53,19 +51,29 @@ class PivotGrid(QWidget):
                 self._ui_sort_asc.setChecked(False)
                 self._update_data()
             def color_changed():
-                if self._ui_color.isChecked():
-                    self._setup().activation |= ColumnRole.Color
-                else:
-                    self._setup().activation &= ~ColumnRole.Color
+                self._setup().as_color = self._ui_color.isChecked()
+                self._update_data()
+            def style_changed():
+                self._setup().as_style = self._ui_color.isChecked()
+                self._update_data()
+            def size_changed():
+                self._setup().as_size = self._ui_color.isChecked()
+                self._update_data()
+            def filter_edit():
+                FilterDialog.show_dialog(self._config, self.col, self._parent_dialog)
                 self._update_data()
             
-            if self._role != ColumnRole.Off:
+            if self._role != ColumnRole.AllColumns:
                 self._ui_active_item = QtHelper.add_menuitem(self._ui_context_menu, 'Active', active_changed, checkable=True)
                 self._ui_context_menu.addSeparator()
+            self._ui_sort_asc = QtHelper.add_menuitem(self._ui_context_menu, 'Filter...', filter_edit)
+            self._ui_context_menu.addSeparator()
             self._ui_sort_asc = QtHelper.add_menuitem(self._ui_context_menu, 'Sort Ascending', sort_asc_changed, checkable=True)
             self._ui_sort_desc = QtHelper.add_menuitem(self._ui_context_menu, 'Sort Descending', sort_desc_changed, checkable=True)
             self._ui_context_menu.addSeparator()
             self._ui_color = QtHelper.add_menuitem(self._ui_context_menu, 'Use for Color', color_changed, checkable=True)
+            self._ui_style = QtHelper.add_menuitem(self._ui_context_menu, 'Use for Style', style_changed, checkable=True)
+            self._ui_size = QtHelper.add_menuitem(self._ui_context_menu, 'Use for Size', size_changed, checkable=True)
             
             self._update_data()
         
@@ -73,18 +81,20 @@ class PivotGrid(QWidget):
             pass
 
         def _setup(self) -> ConfigColumnSetup:
-            return self._config.find_setup(self._col)
+            return self._config.find_setup(self.col)
 
         def _update_data(self):
             # a change in the user-role data will trigger a re-draw
-            self.setData(Qt.ItemDataRole.UserRole, (self._col, hash(self._setup())))
+            self.setData(Qt.ItemDataRole.UserRole, (self.col, hash(self._setup())))
         
         def context_menu(self) -> QMenu|None:
-            if self._role != ColumnRole.Off:
-                self._ui_active_item.setChecked(bool(self._setup().activation&self._role))
+            if self._role != ColumnRole.AllColumns:
+                self._ui_active_item.setChecked(self._config.has_role(self.col, self._role))
             self._ui_sort_asc.setChecked(self._setup().sort==Sort.Asc)
             self._ui_sort_desc.setChecked(self._setup().sort==Sort.Desc)
-            self._ui_color.setChecked(bool(self._setup().activation&ColumnRole.Color))
+            self._ui_color.setChecked(self._setup().as_color)
+            self._ui_style.setChecked(self._setup().as_style)
+            self._ui_size.setChecked(self._setup().as_size)
 
             return self._ui_context_menu
 
@@ -104,12 +114,12 @@ class PivotGrid(QWidget):
             setup = self._config.find_setup(col)
 
             text = setup.col
-            activatable = self._role != ColumnRole.Off
-            active = activatable and (self._role&setup.activation)
-            inactive = activatable and (not (self._role&setup.activation))
+            activatable = self._role != ColumnRole.AllColumns
+            active = activatable and (self._config.has_role(col, self._role))
+            inactive = activatable and (not self._config.has_role(col, self._role))
             error = setup.error
             text2_items = []
-            filter_str = setup.filter.as_str()
+            filter_str = setup.filter.format()
             if filter_str:
                 MAX_LEN = 25
                 if len(filter_str) > MAX_LEN:
@@ -120,18 +130,18 @@ class PivotGrid(QWidget):
             elif setup.sort == Sort.Desc:
                 text2_items.append('↑')
             usages = []
-            if setup.activation & ColumnRole.Group:
+            if self._config.has_role(col, ColumnRole.Group):
                 usages.append('G')
-            if setup.activation & ColumnRole.X:
-                usages.append('D')
-            if setup.activation & ColumnRole.Y:
+            if self._config.has_role(col, ColumnRole.X):
+                usages.append('X')
+            if self._config.has_role(col, ColumnRole.Y):
                 usages.append('Y')
-            if setup.activation & ColumnRole.Size:
-                usages.append('S')
-            if setup.activation & ColumnRole.Style:
-                usages.append('M')
-            if setup.activation & ColumnRole.Color:
+            if setup.as_color:
                 usages.append('C')
+            if setup.as_size:
+                usages.append('S')
+            if setup.as_style:
+                usages.append('T')
             if len(usages) > 0:
                 text2_items.append(''.join(usages))
             text2 = ' • '.join(text2_items)
@@ -180,14 +190,15 @@ class PivotGrid(QWidget):
         MIME_COLUMN = 'application/x-pivot-column'
 
 
-        userChange = pyqtSignal()
+        userChange = pyqtSignal(str)
 
 
-        def __init__(self, config: Config, role: ColumnRole, parent = None):
+        def __init__(self, config: Config, role: ColumnRole, parent_dialog: QWidget):
             self._config = config
             self._role = role
+            self._parent_dialog = parent_dialog
 
-            super().__init__(parent)
+            super().__init__()
 
             self._drag_start_pos: QPoint = None
             self.setDragEnabled(True)
@@ -200,7 +211,14 @@ class PivotGrid(QWidget):
             self.setItemDelegate(self._paint_delegate)
             self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
-            self.model().dataChanged.connect(self.userChange)
+            self.model().dataChanged.connect(self._on_data_changed)
+        
+
+        def _on_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: int):
+            if Qt.ItemDataRole.UserRole not in roles:
+                return
+            (col, _) = self.model().itemData(topLeft)[Qt.ItemDataRole.UserRole]
+            self.userChange.emit(col)
         
 
         def set_config(self, config: Config):
@@ -220,14 +238,14 @@ class PivotGrid(QWidget):
 
         def pack_mimedata(self, item: PivotGrid.ColumnItem) -> QMimeData:
             data = QMimeData()
-            data.setData(PivotGrid.ColumnListWidget.MIME_COLUMN, pickle.dumps(item._col))
+            data.setData(PivotGrid.ColumnListWidget.MIME_COLUMN, pickle.dumps(item.col))
             return data
 
 
         def unpack_mimedata(self, data: QMimeData) -> PivotGrid.ColumnItem:
             if data.hasFormat(PivotGrid.ColumnListWidget.MIME_COLUMN):
                 col = pickle.loads(data.data(PivotGrid.ColumnListWidget.MIME_COLUMN))
-                return PivotGrid.ColumnItem(col, self._config, self._role)
+                return PivotGrid.ColumnItem(col, self._config, self._role, self._parent_dialog)
             return None
         
 
@@ -256,8 +274,8 @@ class PivotGrid(QWidget):
                     result = drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction, Qt.DropAction.MoveAction)
                     if result == Qt.DropAction.IgnoreAction:
                         return
-                    self.handle_source_drop(item, result==Qt.DropAction.MoveAction, intra=drag.source()==drag.target())
-                    self.userChange.emit()
+                    self.handle_source_drop(item, result==Qt.DropAction.MoveAction, internal=drag.target()==self)
+                    self.userChange.emit(item.col)
                     return
             super().mouseMoveEvent(event)
                 
@@ -296,32 +314,40 @@ class PivotGrid(QWidget):
             
             event.acceptProposedAction()
         
-        def handle_source_drop(self, item: PivotGrid.ColumnItem, move: bool, intra: bool):
+        def handle_source_drop(self, item: PivotGrid.ColumnItem, move: bool, internal: bool):
             # note that this is executed *after* handle_target_drop()
             
-            if not intra:
-                item._setup().assignment &= ~self._role
-                item._setup().activation &= ~self._role
 
-            if self._role == ColumnRole.Off:
+            if self._role == ColumnRole.AllColumns:
                 # item was moved *out of* the all-columns box; no action required, as the list remains stable
                 # TODO: should I maybe allow re-ordering?
                 return
 
-            if move and not intra:
+            def remove_role():
+                self._config.set_role(item.col, self._role, False)
+
+            def delete_item():
                 index = self.indexFromItem(item)
                 if index.isValid():
                     self.model().removeRow(index.row())
+            
+            if internal:
+                if move:
+                    delete_item()
+            else:
+                remove_role()
+                if move:
+                    delete_item()
+        
 
         def handle_target_drop(self, item: PivotGrid.ColumnItem, source: QObject|None, point: QPoint):
             # note that this is executed *before* handle_source_drop()
             
-            if self._role == ColumnRole.Off:
+            if self._role == ColumnRole.AllColumns:
                 # item was moved *into* the all-columns box; no action required, as the list remains stable
                 return
             
-            item._setup().assignment |= self._role
-            item._setup().activation |= self._role
+            self._config.set_role(item.col, self._role, True)
             
             index = self.indexAt(point)
             if index.isValid():
@@ -339,18 +365,19 @@ class PivotGrid(QWidget):
             menu.exec(self.mapToGlobal(pos))
         
 
-    def __init__(self, parent: QWidget = None):
-        super().__init__(parent)
+    def __init__(self, parent_dialog: QWidget):
+        self._parent_dialog = parent_dialog
+        super().__init__()
 
         self._config = Config()
 
-        self._ui_all_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Off)
+        self._ui_all_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.AllColumns, self._parent_dialog)
         self._ui_all_list.userChange.connect(self._on_user_change)
-        self._ui_group_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Group)
+        self._ui_group_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Group, self._parent_dialog)
         self._ui_group_list.userChange.connect(self._on_user_change)
-        self._ui_x_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.X)
+        self._ui_x_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.X, self._parent_dialog)
         self._ui_x_list.userChange.connect(self._on_user_change)
-        self._ui_y_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Y)
+        self._ui_y_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Y, self._parent_dialog)
         self._ui_y_list.userChange.connect(self._on_user_change)
 
         layout = QtHelper.layout_grid(
@@ -381,20 +408,21 @@ class PivotGrid(QWidget):
 
     def _update_lists(self):
 
-        self._config.ensure_all_col_setups_exist()
-        
-        def update_widget(widget: PivotGrid.ColumnListWidget):
+        def update_widget(widget: PivotGrid.ColumnListWidget, col_switches: list[ColumnSwitch]):
+            cols = [c.col for c in col_switches]
             widget.set_config(self._config)
             for setup in self._config.col_setups:
-                if (widget._role == ColumnRole.Off) or (widget._role&setup.activation) or (widget._role&setup.assignment):
-                    widget.addItem(PivotGrid.ColumnItem(setup.col, self._config, widget._role))
+                if setup.col in cols:
+                    widget.addItem(PivotGrid.ColumnItem(setup.col, self._config, widget._role, self._parent_dialog))
         
-        update_widget(self._ui_all_list)
-        update_widget(self._ui_group_list)
-        update_widget(self._ui_x_list)
-        update_widget(self._ui_y_list)
+        update_widget(self._ui_all_list, self._config.col_setups)
+        update_widget(self._ui_group_list, self._config.cols_group)
+        update_widget(self._ui_x_list, self._config.cols_x)
+        update_widget(self._ui_y_list, self._config.cols_y)
 
 
-    def _on_user_change(self):
+    def _on_user_change(self, col: str):
+
+        # TODO: make sure color/style/size are assigned to one column only
 
         self.userChange.emit()
