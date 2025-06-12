@@ -17,11 +17,13 @@ class MainWindow(MainWindowUi):
 
     def __init__(self, filenames: list[str]):
         super().__init__()
-        self.config: Config = Config.load('datafile.json')
+        #self.config: Config = Config.load('datafile.json')
+        self.config: Config = Config.load('autosave.json')
 
+        self.ui_set_lines(self.config.plot.lines)
         self.load_files()
         self.apply_filters_and_sorting()
-        self.uiPivotGrid().setConfig(self.config)
+        self.ui_pivot_grid().setConfig(self.config)
         self.update_plot()
         self.config.save('autosave.json')
 
@@ -53,7 +55,7 @@ class MainWindow(MainWindowUi):
                             comment_list.append(line.strip())
                 comment = '\n'.join(comment_list)
                 df = pl.scan_csv(path, comment_prefix='#')
-                print(df)
+                #print(df)
                 df = df.with_columns([
                     pl.lit(comment).alias('_file_comment'),
                     pl.lit(str(path)).alias('_file_path'),
@@ -79,6 +81,9 @@ class MainWindow(MainWindowUi):
 
         conditions = None
         sort_cols, sort_desc = [], []
+
+        # TODO: the sorting should depend on the order in those 3 roles
+
         for col_setup in self.config.col_setups:
             if col_setup.col not in self.config.all_columns:
                 logging.warning(f'Ignoring setup of non-existing column "{col_setup.col}"')
@@ -108,21 +113,24 @@ class MainWindow(MainWindowUi):
                     conditions = condition
                 else:
                     conditions = conditions & (condition)
-            
-            if col_setup.sort == Sort.Asc:
-                sort_cols.append(col_setup.col)
-                sort_desc.append(False)
-            if col_setup.sort == Sort.Desc:
-                sort_cols.append(col_setup.col)
-                sort_desc.append(True)
-
+        
+        for role in [ColumnRole.Y, ColumnRole.X, ColumnRole.Group]:
+            for switch in self.config.get_switches(role):
+                col = switch.col
+                setup = self.config.find_setup(col)
+                if setup.sort == Sort.Asc:
+                    sort_cols.append(setup.col)
+                    sort_desc.append(False)
+                if setup.sort == Sort.Desc:
+                    sort_cols.append(setup.col)
+                    sort_desc.append(True)
+        
         df = self.config.raw_df.lazy()
         if conditions is not None:
             df = df.filter(conditions)
         if len(sort_cols) >= 1:
-            print(f'Sorting by {sort_cols}')
+            logging.info(f'Sorting by {sort_cols}')
             df = df.sort(by=sort_cols, descending=sort_desc)
-        
         self.config.df = df.collect()
 
 
@@ -154,28 +162,40 @@ class MainWindow(MainWindowUi):
         size_col = get_single_col([c.col for c in self.config.col_setups if c.as_size and c.col in self.config.all_columns])
         
         color_map = {}
-        def get_discrete_color(key):
+        def get_discrete_color(col):
             nonlocal color_map
-            if key not in color_map:
+            if col not in color_map:
                 available = MainWindow.get_all_plot_colors()
-                color_map[key] = available[len(color_map) % len(available)]
-            return color_map[key]
+                color_map[col] = available[len(color_map) % len(available)]
+            return color_map[col]
 
         marker_map = {}
-        def get_discrete_marker(key):
+        def get_discrete_marker(col):
             nonlocal marker_map
-            if key not in marker_map:
+            if col not in marker_map:
                 available = MainWindow.get_all_plot_markers()
-                marker_map[key] = available[len(marker_map) % len(available)]
-            return marker_map[key]
+                marker_map[col] = available[len(marker_map) % len(available)]
+            return marker_map[col]
+
+        range_map = {}
+        def get_relative_value(col, value):
+            nonlocal range_map
+            if col not in range_map:
+                all_values = self.config.get_column_values(col)
+                lo, hi = np.min(all_values), np.max(all_values)
+                range_map[col] = (lo, hi)
+            (lo, hi) = range_map[col]
+            if lo==hi:
+                return 0.5
+            return (value - lo) / (hi-lo)
         
-        print(f'Groups: {group_cols}; Color: {color_col}; X: {x_cols}; Y: {y_cols}')
+        logging.info(f'Groups: {group_cols}; Color: {color_col}; X: {x_cols}; Y: {y_cols}')
 
         fig = go.Figure()
 
         def plot_group(group_tuple: tuple, df: pl.DataFrame):
 
-            unique = True
+            can_use_lines = True
             if len(x_cols) == 0:
                 logging.warning(f'No x-columns to plot')
                 return
@@ -184,7 +204,7 @@ class MainWindow(MainWindowUi):
                 n_total, n_unique = len(x), len(np.unique(x))
                 if n_total > n_unique:
                     logging.warning(f'There are {n_total} X-axis values, but only {n_unique} unique; you probably forgot some grouping or filtering')
-                    unique = False
+                    can_use_lines = False
             else:
                 x = [df.get_column(x_col).to_numpy() for x_col in x_cols]
                 n_total = max(*[len(x1) for x1 in x])
@@ -192,7 +212,7 @@ class MainWindow(MainWindowUi):
                 n_expected_total = np.prod(n_unique_per_group)
                 if n_total > n_expected_total:
                     logging.warning(f'There are {n_total} X-axis values, but only {n_expected_total} unique; you probably forgot some grouping or filtering')
-                    unique = False
+                    can_use_lines = False
             
             def format(x):
                 if isinstance(x, float):
@@ -218,7 +238,6 @@ class MainWindow(MainWindowUi):
                     if len(set(color_values)) == 1:
                         common_color = get_discrete_color(color_values[0])
                     else:
-                        unique = False
                         individual_colors = [get_discrete_color(elem) for elem in color_values]#
                 
                 common_markers = None
@@ -228,28 +247,44 @@ class MainWindow(MainWindowUi):
                     if len(set(style_values)) == 1:
                         common_markers = get_discrete_marker(style_values[0])
                     else:
-                        unique = False
-                        individual_markers = [get_discrete_marker(elem) for elem in style_values]#
+                        individual_markers = [get_discrete_marker(elem) for elem in style_values]
                 
+                individual_sizes = None
                 if size_col is not None:
-                    pass  # TODO: implement
+                    size_values = df.get_column(size_col)
+                    sizes = [get_relative_value(size_col, elem) for elem in size_values]
+                    individual_sizes = np.array(sizes)
 
                 line = dict()
                 marker = dict()
-                if unique:
+
+                use_lines = can_use_lines and self.config.plot.lines
+                use_markers = False
+                
+                if common_color:
+                    line['color'] = common_color
+                    marker['color'] = common_color
+                elif individual_colors is not None:
+                    use_markers = True
+                    marker['color'] = individual_colors
+                
+                if common_markers is not None:
+                    use_markers = True
+                    marker['symbol'] = common_markers
+                if individual_markers is not None:
+                    use_markers = True
+                    marker['symbol'] = individual_markers
+
+                if individual_sizes is not None:
+                    use_markers = True
+                    marker['size'] = 5 + 15 * individual_sizes
+                
+                if use_lines and use_markers:
+                    mode = 'lines+markers'
+                elif use_lines:
                     mode = 'lines'
-                    if common_color:
-                        line['color'] = common_color
                 else:
                     mode = 'markers'
-                    if individual_colors:
-                        marker['color'] = individual_colors
-                    elif common_color:
-                        marker['color'] = common_color
-                if common_markers or individual_markers:
-                    if mode=='lines':
-                        mode = 'lines+markers'
-                    marker['symbol'] = common_markers or individual_markers
 
                 fig.add_trace(go.Scatter(x=x, y=y, name=legend, mode=mode, text=infos, line=line, marker=marker))
 
@@ -260,7 +295,7 @@ class MainWindow(MainWindowUi):
             plot_group(tuple(), df)
 
         fig.update_layout(xaxis_title=self.config.plot.x_title, yaxis_title=self.config.plot.y_title)
-        self.uiPlot(fig)
+        self.ui_plot(fig)
     
 
     @staticmethod
@@ -275,7 +310,17 @@ class MainWindow(MainWindowUi):
         symbols_without_specials = [s for s in symbols_without_numers if '-' not in s]
         return symbols_without_specials
 
-    def on_pivot_change(self):
+
+    def need_re_render(self):
         self.apply_filters_and_sorting()
         self.update_plot()
         self.config.save('autosave.json')
+
+
+    def on_pivot_change(self):
+        self.need_re_render()
+
+
+    def on_lines_change(self):
+        self.config.plot.lines = self.ui_get_lines()
+        self.need_re_render()

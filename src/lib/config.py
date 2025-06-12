@@ -54,6 +54,7 @@ class ConfigInput(BaseConfig):
 
 
 class ConfigPlot(BaseConfig):
+    lines: bool = True
     x_title: str = 'X'
     y_title: str = 'Y'
 
@@ -70,8 +71,8 @@ class ConfigFilter(BaseConfig):
     
 
     @staticmethod
-    def _format(value):
-        return f'{value:.8g}' if isinstance(value,(int,float)) else str(value)
+    def _format(value, precision: int = 10):
+        return f'{value:.{precision}g}' if isinstance(value,(int,float)) else str(value)
     
     def format(self) -> str:
         
@@ -79,7 +80,10 @@ class ConfigFilter(BaseConfig):
             return self.expression
         
         elif self.mode == FilterMode.Values:
-            return ','.join([ConfigFilter._format(v) for v in self.values])
+            if len(self.values) >= 3:
+                return f'[{len(self.values)}x]'
+            else:
+                return '[' + ','.join([ConfigFilter._format(v,3) for v in self.values]) + ']'
         
         elif self.mode == FilterMode.Comparison:
             return self.format_comparison()
@@ -95,8 +99,8 @@ class ConfigFilter(BaseConfig):
             case Relation.GreaterOrEqual: return f'≥ {value_str}'
             case Relation.Less: return f'< {value_str}'
             case Relation.LessOrEqual: return f'≤ {value_str}'
-            case Relation.In: return f'{value_str} ... {value2_str}'
-            case Relation.NotIn: return f'! {value_str} ... {value2_str}'
+            case Relation.In: return f'{value_str} … {value2_str}'
+            case Relation.NotIn: return f'! {value_str} … {value2_str}'
         raise ValueError()
 
     def parse_comparison(self, s: str, set_mode_to_comparison: bool = True) -> Self:
@@ -106,15 +110,17 @@ class ConfigFilter(BaseConfig):
         s_stripped = s.strip()
         mode = FilterMode.Comparison if set_mode_to_comparison else self.mode
 
-        for op,rel in [('=',Relation.Equal), ('!=',Relation.NotEqual), ('>',Relation.Greater), ('>=',Relation.GreaterOrEqual), ('<',Relation.Less), ('<=',Relation.LessOrEqual)]:
-            if m := re.match(r'^' + op + r'\s*(' + REX_FLOAT + r')$', s_stripped):
+        for op,rel in [('=',Relation.Equal), ('!=',Relation.NotEqual), ('>',Relation.Greater), (r'≥|>=',Relation.GreaterOrEqual), ('<',Relation.Less), (r'≤|<=',Relation.LessOrEqual)]:
+            if m := re.match(r'^(' + op + r')\s*(' + REX_FLOAT + r')$', s_stripped):
                 self.mode, self.rel = mode, rel
-                self.value = float(m.group(1))
+                self.value = float(m.group(2))
+                return self
         
-        for op,rel in [('',Relation.In), ('!',Relation.NotIn)]:
-            if m := re.match(r'^' + op + r'\s*(' + REX_FLOAT + r')\s*\.\.\.?\s*(' + REX_FLOAT + r')$', s_stripped):
+        for op,rel in [('',Relation.In), ('!|~',Relation.NotIn)]:
+            if m := re.match(r'^(' + op + r')\s*(' + REX_FLOAT + r')\s*(\.\.\.?|…)\s*(' + REX_FLOAT + r')$', s_stripped):
                 self.mode, self.rel = mode, rel
-                self.value, self.value2 = float(m.group(1)), float(m.group(2))
+                self.value, self.value2 = float(m.group(2)), float(m.group(4))
+                return self
 
         raise ValueError(f'Unable to parse comparison "{s}"')
 
@@ -140,7 +146,7 @@ class ColumnSwitch(BaseConfig):
 
 
 class ColumnRole(enum.Enum):
-    AllColumns = enum.auto()
+    Unassigned = enum.auto()
     Group = enum.auto()
     X = enum.auto()
     Y = enum.auto()
@@ -200,46 +206,40 @@ class Config(BaseConfig):
         return self._all_columns
 
     def _ensure_setups_exist(self):
-        for col in self._all_columns:
-            found = False
-            for col_setup in self.col_setups:
-                if col_setup.col == col:
-                    found = True
-                    break
-            if not found:
-                setup = ConfigColumnSetup()
-                setup.col = col
-                self.col_setups.append(setup)
+        all_cols = set(self._all_columns)
+        available_cols = set([setup.col for setup in self.col_setups])
+        missing_cols = all_cols - available_cols
+        for col in missing_cols:
+            setup = ConfigColumnSetup()
+            setup.col = col
+            self.col_setups.append(setup)
 
 
     def find_setup(self, col: str) -> ConfigColumnSetup:
         for col_setup in self.col_setups:
             if col_setup.col == col:
                 return col_setup
-        raise RuntimeError(f'No setup for column "<{col}>" found.')
+        raise RuntimeError(f'No setup for column "{col}" found.')
 
-    def has_role(self, col: str, role: ColumnRole) -> bool:
+    def get_switches(self, role: ColumnRole) -> list[ColumnSwitch]:
         match role:
-            case ColumnRole.Group: return col in [c.col for c in self.cols_group]
-            case ColumnRole.X: return col in [c.col for c in self.cols_x]
-            case ColumnRole.Y: return col in [c.col for c in self.cols_y]
+            case ColumnRole.Group: return self.cols_group
+            case ColumnRole.X: return self.cols_x
+            case ColumnRole.Y: return self.cols_y
+        raise ValueError()
+
+    def set_switches(self, role: ColumnRole, switches: list[ColumnSwitch]):
+        match role:
+            case ColumnRole.Group: self.cols_group = switches
+            case ColumnRole.X: self.cols_x = switches
+            case ColumnRole.Y: self.cols_y = switches
             case _: raise ValueError()
-    def set_role(self, col: str, role: ColumnRole, has_role: bool = True):
-        if has_role and not self.has_role(col, role):
-            sw = ColumnSwitch()
-            sw.col = col
-            sw.active = True
-            match role:
-                case ColumnRole.Group: self.cols_group = [*self.cols_group, sw]
-                case ColumnRole.X: self.cols_x = [*self.cols_x, sw]
-                case ColumnRole.Y: self.cols_y = [*self.cols_y, sw]
-                case _: raise ValueError()
-        elif (not has_role) and self.has_role(col, role):
-            match role:
-                case ColumnRole.Group: self.cols_group = [c for c in self.cols_group if c.col!=col]
-                case ColumnRole.X: self.cols_x = [c for c in self.cols_x if c.col!=col]
-                case ColumnRole.Y: self.cols_y = [c for c in self.cols_y if c.col!=col]
-                case _: raise ValueError()
+
+    def get_switch(self, role: ColumnRole, index: int) -> ColumnSwitch:
+        list = self.get_switches(role)
+        if index >= len(list):
+            raise ValueError()  # TODO: return None instead?
+        return list[index]
 
     def get_column_values(self, col: str) -> list[str]:
         if col not in self._column_values:

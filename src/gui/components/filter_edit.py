@@ -102,7 +102,7 @@ class FilterEdit(QLineEdit):
                 return
             if not self._event_lock.locked:
                 self.valueChanged.emit()
-        except:
+        except Exception as ex:
             QtHelper.indicate_error(self, True)
 
 
