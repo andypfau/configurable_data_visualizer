@@ -22,7 +22,7 @@ class MainWindow(MainWindowUi):
         PlotType.Scatter: 'Scatter',
         PlotType.Heatmap: 'Heatmap',
         PlotType.Scatter3D: '3D Scatter',
-        PlotType.Scattermatrix: 'Scatter Matrix',
+        PlotType.StatMatrix: 'Stat Matrix',
     }
 
 
@@ -43,7 +43,7 @@ class MainWindow(MainWindowUi):
     
 
     def update_ui_from_config(self):
-        self.ui_set_lines(self.config.plot.lines)
+        self.ui_set_lines(self.config.plot.scatter_lines)
         self.ui_set_plottype(MainWindow.PLOTTYPE_NAMES[self.config.plot.type])
 
     
@@ -151,6 +151,7 @@ class MainWindow(MainWindowUi):
             logging.info(f'Sorting by {sort_cols}')
             df = df.sort(by=sort_cols, descending=sort_desc)
         self.config.df = df.collect()
+        logging.info(f'Dataframe shape: {self.config.df.shape}')
 
 
     def update_plot(self):
@@ -174,7 +175,7 @@ class MainWindow(MainWindowUi):
 
 
     def on_lines_change(self):
-        self.config.plot.lines = self.ui_get_lines()
+        self.config.plot.scatter_lines = self.ui_get_lines()
         self.need_re_render()
 
 

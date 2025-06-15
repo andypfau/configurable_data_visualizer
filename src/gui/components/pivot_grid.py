@@ -490,11 +490,23 @@ class PivotGrid(QWidget):
     
 
     @property
+    def _need_x(self) -> bool:
+        return self._config.plot.type not in [PlotType.StatMatrix]
+    
+
+    @property
+    def _need_y(self) -> bool:
+        return self._config.plot.type not in [PlotType.StatMatrix]
+    
+
+    @property
     def _need_z(self) -> bool:
         return self._config.plot.type in [PlotType.Scatter3D]
 
 
     def _update_layout(self):
+        self._ui_cell_lt_widget.setVisible(self._need_x)
+        self._ui_cell_rt_widget.setVisible(self._need_y)
         self._ui_cell_lb_widget.setVisible(self._need_z)
         self._ui_cell_rb_widget.setVisible(False)
 
@@ -514,8 +526,10 @@ class PivotGrid(QWidget):
 
         update_widget(self._ui_all_list)
         update_widget(self._ui_group_list)
-        update_widget(self._ui_x_list)
-        update_widget(self._ui_y_list)
+        if self._need_x:
+            update_widget(self._ui_x_list)
+        if self._need_y:
+            update_widget(self._ui_y_list)
         if self._need_z:
             update_widget(self._ui_z_list)
 

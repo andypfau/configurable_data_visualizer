@@ -1,16 +1,18 @@
-from lib.config import Config, Relation, Sort, FilterMode, ColumnRole, PlotType
+from lib.config import Config, Relation, Sort, FilterMode, ColumnRole, PlotType, MatrixDiagonalPlotType, MatrixTrianglePlotType
 from lib.utils import reverse_lookup
 
 import os, pathlib
 import sys
+import math
 import re
 import logging
 import polars as pl
 import numpy as np
 import plotly, plotly.express, plotly.validators.scatter.marker
 import plotly.graph_objects as go
-from plotly.figure_factory import create_scatterplotmatrix
+from plotly.subplots import make_subplots
 from typing import Callable
+import scipy.stats
 
 
 
@@ -29,18 +31,81 @@ class Plot:
             case PlotType.Scatter: return self.scatter()
             case PlotType.Heatmap: return self.scatter(segmented_y_axis=True)
             case PlotType.Scatter3D: return self.scatter(three_d=True)
-            case PlotType.Scattermatrix: return self.scatter_matrix()
+            case PlotType.StatMatrix: return self.scatter_matrix()
             case _: raise RuntimeError()
 
 
     def scatter_matrix(self) -> go.Figure:
 
         df = self._config.df
-
         cols = self._extract('group', self._config.cols_group, lambda col: col.active, n_min=2)
-        df = df.select(*cols)
+        dim = len(cols)
 
-        fig = create_scatterplotmatrix(df.to_pandas(), diag='histogram')
+        def make_diagonal_plot(i: int):
+            if self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.Off:
+                return
+            loc = dict(row=i+1, col=i+1)
+            data = df.get_column(cols[i]).to_numpy()
+            if self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.Histogram:
+                #hist, bin_edges = np.histogram(data, density=False, bins=math.ceil(5*math.log(len(data))))
+                #bins = (bin_edges[1:]+bin_edges[:-1])/2
+                #idx_empty = hist==0
+                #hist, bins = np.delete(hist,idx_empty), np.delete(bins,idx_empty)
+                #fig.add_trace(go.Scatter(x=bins, y=hist), **loc)
+                fig.add_trace(go.Histogram(x=data), **loc)
+                mean, sdev = np.mean(data), np.std(data,ddof=1)
+                fig.add_vline(x=mean-sdev, line=dict(dash='dot', color='black'), **loc, opacity=0.67)
+                fig.add_vline(x=mean, line=dict(dash='dashdot', color='black'), **loc, opacity=0.67)
+                fig.add_vline(x=mean+sdev, line=dict(dash='dot', color='black'), **loc, opacity=0.67)
+            elif self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.RunSequence:
+                fig.add_trace(go.Scatter(y=data), **loc)
+                y0, y1 = np.min(data), np.max(data)
+                ref_x = [0, len(data)-1]
+                ref_y = [y0, y1]
+                fig.add_trace(go.Scatter(x=ref_x, y=ref_y, mode='lines', line=dict(dash='dot', color='black'), opacity=0.33), **loc)
+            else: raise ValueError()
+
+        def make_triangle_plot(x: int, y: int, typ: MatrixTrianglePlotType):
+            if typ == MatrixTrianglePlotType.Off:
+                return
+            loc = dict(row=x+1, col=y+1)
+            data_x = df.get_column(cols[x]).to_numpy()
+            data_y = df.get_column(cols[y]).to_numpy()
+            x0, x1 = np.min(data_x), np.max(data_x)
+            if typ == MatrixTrianglePlotType.Scatter:
+                fig.add_trace(go.Scatter(x=data_x, y=data_y, mode='markers', marker=dict(opacity=0.5)), **loc)
+                reg = scipy.stats.linregress(data_x, data_y)
+                reg_x = [x0, x1]
+                reg_y = [reg.intercept, reg.intercept+reg.slope*x1]
+                fig.add_trace(go.Scatter(x=reg_x, y=reg_y, mode='lines', line=dict(dash='dash', color='black'), opacity=0.67), **loc)
+            elif typ == MatrixTrianglePlotType.QQ:
+                quant_x = np.percentile(data_x, np.linspace(0, 100, 101))
+                quant_y = np.percentile(data_y, np.linspace(0, 100, 101))
+                fig.add_trace(go.Scatter(x=quant_x, y=quant_y), **loc)
+                y0, y1 = np.min(data_y), np.max(data_y)
+                ref_x = [x0, x1]
+                ref_y = [y0, y1]
+                fig.add_trace(go.Scatter(x=ref_x, y=ref_y, mode='lines', line=dict(dash='dot', color='black'), opacity=0.33), **loc)
+            elif typ == MatrixTrianglePlotType.Off:
+                pass
+            else: raise ValueError()
+
+        fig = make_subplots(rows=dim, cols=dim)
+        for x in range(dim):
+            for y in range(dim):
+                if x < y:
+                    make_triangle_plot(x, y, self._config.plot.matrix_lower_triangle_type)
+                elif x > y:
+                    make_triangle_plot(x, y, self._config.plot.matrix_upper_triangle_type)
+                else:
+                    make_diagonal_plot(x)
+        
+        for x in range(dim):
+            fig.update_xaxes(title_text=cols[x], row=dim, col=x+1)
+            fig.update_yaxes(title_text=cols[x], row=x+1, col=1)
+        
+        fig.update_layout(showlegend=False)
+        
         return fig
 
 
@@ -113,7 +178,7 @@ class Plot:
                 line = dict()
                 marker = dict()
 
-                use_lines = can_use_lines and self._config.plot.lines
+                use_lines = can_use_lines and self._config.plot.scatter_lines
                 use_markers = False
                 
                 if common_color:

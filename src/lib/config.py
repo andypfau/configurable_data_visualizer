@@ -39,9 +39,23 @@ class FilterMode(enum.StrEnum):
 
 class PlotType(enum.StrEnum):
     Scatter = 'scatter'
-    Scattermatrix = 'scatter-matrix'
+    StatMatrix = 'stat-matrix'
     Heatmap = 'heatmap'
     Scatter3D = 'scatter-3d'
+
+
+
+class MatrixDiagonalPlotType(enum.StrEnum):
+    Off = 'off'
+    Histogram = 'histogram'
+    RunSequence = 'run-sequence'
+
+
+
+class MatrixTrianglePlotType(enum.StrEnum):
+    Off = 'off'
+    Scatter = 'scatter'
+    QQ = 'qq'
 
 
 
@@ -63,7 +77,10 @@ class ConfigInput(BaseConfig):
 
 class ConfigPlot(BaseConfig):
     type: PlotType = PlotType.Scatter
-    lines: bool = True
+    matrix_diagonal_type: MatrixDiagonalPlotType = MatrixDiagonalPlotType.Histogram
+    matrix_lower_triangle_type: MatrixTrianglePlotType = MatrixTrianglePlotType.Off
+    matrix_upper_triangle_type: MatrixTrianglePlotType = MatrixTrianglePlotType.Scatter
+    scatter_lines: bool = True
     x_title: str = ''
     y_title: str = ''
     z_title: str = ''
