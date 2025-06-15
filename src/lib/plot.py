@@ -41,24 +41,29 @@ class Plot:
         cols = self._extract('group', self._config.cols_group, lambda col: col.active, n_min=2)
         dim = len(cols)
 
+        MAX_POINTS = 2_000
+
         def make_diagonal_plot(i: int):
             if self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.Off:
                 return
             loc = dict(row=i+1, col=i+1)
             data = df.get_column(cols[i]).to_numpy()
             if self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.Histogram:
-                #hist, bin_edges = np.histogram(data, density=False, bins=math.ceil(5*math.log(len(data))))
-                #bins = (bin_edges[1:]+bin_edges[:-1])/2
-                #idx_empty = hist==0
-                #hist, bins = np.delete(hist,idx_empty), np.delete(bins,idx_empty)
-                #fig.add_trace(go.Scatter(x=bins, y=hist), **loc)
-                fig.add_trace(go.Histogram(x=data), **loc)
+                hist, bin_edges = np.histogram(data, density=False, bins=math.ceil(5*math.log(len(data))))
+                bins = (bin_edges[1:]+bin_edges[:-1])/2
+                idx_empty = hist==0
+                hist, bins = np.delete(hist,idx_empty), np.delete(bins,idx_empty)
+                fig.add_trace(go.Bar(x=bins, y=hist), **loc)
                 mean, sdev = np.mean(data), np.std(data,ddof=1)
                 fig.add_vline(x=mean-sdev, line=dict(dash='dot', color='black'), **loc, opacity=0.67)
                 fig.add_vline(x=mean, line=dict(dash='dashdot', color='black'), **loc, opacity=0.67)
                 fig.add_vline(x=mean+sdev, line=dict(dash='dot', color='black'), **loc, opacity=0.67)
             elif self._config.plot.matrix_diagonal_type == MatrixDiagonalPlotType.RunSequence:
-                fig.add_trace(go.Scatter(y=data), **loc)
+                if len(data) <= MAX_POINTS:
+                    data_to_plot = data
+                else:
+                    data_to_plot = np.random.choice(data, size=MAX_POINTS)
+                fig.add_trace(go.Scatter(y=data_to_plot), **loc)
                 y0, y1 = np.min(data), np.max(data)
                 ref_x = [0, len(data)-1]
                 ref_y = [y0, y1]
@@ -73,7 +78,12 @@ class Plot:
             data_y = df.get_column(cols[y]).to_numpy()
             x0, x1 = np.min(data_x), np.max(data_x)
             if typ == MatrixTrianglePlotType.Scatter:
-                fig.add_trace(go.Scatter(x=data_x, y=data_y, mode='markers', marker=dict(opacity=0.5)), **loc)
+                if len(data_x) <= MAX_POINTS:
+                    data_x_to_plot, data_y_to_plot = data_x, data_y
+                else:
+                    indices = np.random.choice(np.linspace(0, len(data_x)-1, len(data_x), dtype=int), size=MAX_POINTS)
+                    data_x_to_plot, data_y_to_plot = data_x[indices], data_y[indices]
+                fig.add_trace(go.Scatter(x=data_x_to_plot, y=data_y_to_plot, mode='markers', marker=dict(opacity=0.5)), **loc)
                 reg = scipy.stats.linregress(data_x, data_y)
                 reg_x = [x0, x1]
                 reg_y = [reg.intercept, reg.intercept+reg.slope*x1]
