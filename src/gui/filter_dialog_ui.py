@@ -16,9 +16,9 @@ class FilterDialogUi(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Filter')
-        # self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.Tool)
-        #self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlag(Qt.WindowType.Tool, True)
+        self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, False)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, False)
 
         self._ui_tabs = QTabWidget()
         
@@ -46,7 +46,6 @@ class FilterDialogUi(QDialog):
         ))
 
         self.setLayout(QtHelper.layout_h(self._ui_tabs))
-        #self.resize(800, 600)
 
         self._ui_tabs.currentChanged.connect(self.on_mode_changed)
     
@@ -87,12 +86,12 @@ class FilterDialogUi(QDialog):
         match mode:
             case FilterMode.Off: self._ui_tabs.setCurrentIndex(0)
             case FilterMode.Comparison: self._ui_tabs.setCurrentIndex(1)
-            case FilterMode.Values: self._ui_tabs.setCurrentIndex(2)
+            case FilterMode.Selection: self._ui_tabs.setCurrentIndex(2)
     def ui_get_mode(self) -> FilterMode:
         match self._ui_tabs.currentIndex():
             case 0: return FilterMode.Off
             case 1: return FilterMode.Comparison
-            case 2: return FilterMode.Values
+            case 2: return FilterMode.Selection
         raise ValueError()
 
 

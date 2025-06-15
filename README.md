@@ -4,8 +4,11 @@ Plot Experiment
 Open Tasks
 ----------
 
-- Initial plotting capability
-- Allow to turn filters and columns on or off
-- Colorization
-- Marker-functionality
-- Usable GUI
+- [ ] Other plots (heatmap, 3D area)
+- [ ] File selection GUI
+- [ ] Slicers
+- [X] Usable GUI
+- [X] Marker-functionality
+- [X] Colorization
+- [X] Allow to turn filters and columns on or off
+- [X] Initial plotting capability

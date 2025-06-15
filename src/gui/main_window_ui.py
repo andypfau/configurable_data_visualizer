@@ -22,6 +22,8 @@ class MainWindowUi(QMainWindow):
         self._ui_webview.setMinimumSize(500,300)
         self._ui_lines_cb = QCheckBox('Lines')
         self._ui_lines_cb.checkStateChanged.connect(self.on_lines_change)
+        self._ui_plottype_combo = QComboBox()
+        self._ui_plottype_combo.currentIndexChanged.connect(self.on_plottype_change)
         self._ui_label = QLineEdit()
         self._ui_label.setReadOnly(True)
         self._ui_pivot_grid = PivotGrid(self)
@@ -30,7 +32,7 @@ class MainWindowUi(QMainWindow):
         
         self._ui_splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self._ui_splitter.addWidget(QtHelper.layout_widget_v(
-            QtHelper.layout_h(self._ui_lines_cb, self._ui_label),
+            QtHelper.layout_h(self._ui_lines_cb, self._ui_plottype_combo, self._ui_label, ...),
             self._ui_webview
         ))
         self._ui_splitter.addWidget(self._ui_pivot_grid)
@@ -44,9 +46,14 @@ class MainWindowUi(QMainWindow):
         return self._ui_pivot_grid
 
 
-    def ui_plot(self, fig: go.Figure):
-        htm = fig.to_html(include_plotlyjs='cdn', full_html=True)
-        self._ui_webview.setHtml(htm)
+    def ui_plot(self, content):
+        if isinstance(content, go.Figure):
+            htm = content.to_html(include_plotlyjs='cdn', full_html=True)
+            self._ui_webview.setHtml(htm)
+        elif isinstance(content, str):
+            self._ui_webview.setHtml(f'<html><body><p>{content}</p></body></html>')
+        else:
+            self._ui_webview.setHtml('<html><body><p>No Plot</p></body></html>')
 
     
     def ui_set_label(self, value: str):
@@ -55,6 +62,20 @@ class MainWindowUi(QMainWindow):
             self._ui_label.setVisible(True)
         else:
             self._ui_label.setVisible(False)
+    
+
+    def ui_get_plottype(self) -> str:
+        return self._ui_plottype_combo.currentText()
+    def ui_set_plottype_options(self, options: list[str]):
+        self._ui_plottype_combo.currentIndexChanged.disconnect(self.on_plottype_change)
+        self._ui_plottype_combo.clear()
+        for option in options:
+            self._ui_plottype_combo.addItem(option)
+        self._ui_plottype_combo.currentIndexChanged.connect(self.on_plottype_change)
+    def ui_set_plottype(self, value: str):
+        self._ui_plottype_combo.currentIndexChanged.disconnect(self.on_plottype_change)
+        self._ui_plottype_combo.setCurrentText(value)
+        self._ui_plottype_combo.currentIndexChanged.connect(self.on_plottype_change)
     
 
     def ui_get_lines(self) -> bool:
@@ -69,4 +90,6 @@ class MainWindowUi(QMainWindow):
     def on_pivot_change(self):
         pass
     def on_lines_change(self):
+        pass
+    def on_plottype_change(self):
         pass

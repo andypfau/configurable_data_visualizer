@@ -20,7 +20,7 @@ class FilterDialog(FilterDialogUi):
         
         filter = self._filter
         self.ui_set_col_name(col)
-        self.ui_set_values_and_checked(config.get_column_values(col), filter.values)
+        self.ui_set_values_and_checked(config.get_column_values(col), filter.selection)
         self.ui_set_mode(filter.mode)
         self.ui_set_comparison(filter)
 
@@ -43,13 +43,13 @@ class FilterDialog(FilterDialogUi):
     def on_check_all(self):
         all_values = self.config.get_column_values(self.col)
         self.ui_set_values_and_checked(all_values, all_values)
-        self._filter.values = all_values
+        self._filter.selection = all_values
 
 
     def on_check_none(self):
         all_values = self.config.get_column_values(self.col)
         self.ui_set_values_and_checked(all_values, [])
-        self._filter.values = []
+        self._filter.selection = []
 
 
     def on_check_toggle(self):
@@ -57,11 +57,11 @@ class FilterDialog(FilterDialogUi):
         currently_checked = self.ui_get_checked()
         new_checked = [value for value in all_values if value not in currently_checked]
         self.ui_set_values_and_checked(all_values, new_checked)
-        self._filter.values = new_checked
+        self._filter.selection = new_checked
 
 
     def on_list_check(self):
-        self._filter.values = self.ui_get_checked()
+        self._filter.selection = self.ui_get_checked()
 
 
     def on_mode_changed(self):

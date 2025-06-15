@@ -15,6 +15,7 @@ polars = "*"
 pyinstaller = "*"
 pyqt6-webengine = "*"
 dash = "*"
+pyarrow = "*"
 
 [dev-packages]
 

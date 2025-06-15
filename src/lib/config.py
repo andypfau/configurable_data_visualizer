@@ -31,9 +31,17 @@ class Sort(enum.StrEnum):
 
 class FilterMode(enum.StrEnum):
     Off = 'off'
-    Values = 'values'
+    Selection = 'selection'
     Expression = 'expression'
     Comparison = 'comparison'
+
+
+
+class PlotType(enum.StrEnum):
+    Scatter = 'scatter'
+    Scattermatrix = 'scatter-matrix'
+    Heatmap = 'heatmap'
+    Scatter3D = 'scatter-3d'
 
 
 
@@ -54,20 +62,22 @@ class ConfigInput(BaseConfig):
 
 
 class ConfigPlot(BaseConfig):
+    type: PlotType = PlotType.Scatter
     lines: bool = True
-    x_title: str = 'X'
-    y_title: str = 'Y'
+    x_title: str = ''
+    y_title: str = ''
+    z_title: str = ''
 
 
 
 class ConfigFilter(BaseConfig):
     
     mode: FilterMode = FilterMode.Off
-    values: list[Any] = []
     expression: str = ''
-    rel: Relation = Relation.Equal
-    value: Any = 0
-    value2: Any = 0
+    cmp_rel: Relation = Relation.Equal
+    cmp_value: Any = 0
+    cmp_value2: Any = 0
+    selection: list[Any] = []
     
 
     @staticmethod
@@ -79,11 +89,11 @@ class ConfigFilter(BaseConfig):
         if self.mode == FilterMode.Expression:
             return self.expression
         
-        elif self.mode == FilterMode.Values:
-            if len(self.values) >= 3:
-                return f'[{len(self.values)}x]'
+        elif self.mode == FilterMode.Selection:
+            if len(self.selection) >= 3:
+                return f'[{len(self.selection)}x]'
             else:
-                return '[' + ','.join([ConfigFilter._format(v,3) for v in self.values]) + ']'
+                return '[' + ','.join([ConfigFilter._format(v,3) for v in self.selection]) + ']'
         
         elif self.mode == FilterMode.Comparison:
             return self.format_comparison()
@@ -91,8 +101,8 @@ class ConfigFilter(BaseConfig):
         return ''
 
     def format_comparison(self) -> str:
-        value_str, value2_str = ConfigFilter._format(self.value), ConfigFilter._format(self.value2)
-        match self.rel:
+        value_str, value2_str = ConfigFilter._format(self.cmp_value), ConfigFilter._format(self.cmp_value2)
+        match self.cmp_rel:
             case Relation.Equal: return f'= {value_str}'
             case Relation.NotEqual: return f'≠ {value_str}'
             case Relation.Greater: return f'> {value_str}'
@@ -112,14 +122,14 @@ class ConfigFilter(BaseConfig):
 
         for op,rel in [('=',Relation.Equal), ('!=',Relation.NotEqual), ('>',Relation.Greater), (r'≥|>=',Relation.GreaterOrEqual), ('<',Relation.Less), (r'≤|<=',Relation.LessOrEqual)]:
             if m := re.match(r'^(' + op + r')\s*(' + REX_FLOAT + r')$', s_stripped):
-                self.mode, self.rel = mode, rel
-                self.value = float(m.group(2))
+                self.mode, self.cmp_rel = mode, rel
+                self.cmp_value = float(m.group(2))
                 return self
         
         for op,rel in [('',Relation.In), ('!|~',Relation.NotIn)]:
             if m := re.match(r'^(' + op + r')\s*(' + REX_FLOAT + r')\s*(\.\.\.?|…)\s*(' + REX_FLOAT + r')$', s_stripped):
-                self.mode, self.rel = mode, rel
-                self.value, self.value2 = float(m.group(2)), float(m.group(4))
+                self.mode, self.cmp_rel = mode, rel
+                self.cmp_value, self.cmp_value2 = float(m.group(2)), float(m.group(4))
                 return self
 
         raise ValueError(f'Unable to parse comparison "{s}"')
@@ -150,6 +160,7 @@ class ColumnRole(enum.Enum):
     Group = enum.auto()
     X = enum.auto()
     Y = enum.auto()
+    Z = enum.auto()
 
 
 
@@ -160,6 +171,7 @@ class Config(BaseConfig):
     cols_group: list[ColumnSwitch] = []
     cols_x: list[ColumnSwitch] = []
     cols_y: list[ColumnSwitch] = []
+    cols_z: list[ColumnSwitch] = []
     plot: ConfigPlot = ConfigPlot()
 
 
@@ -226,6 +238,7 @@ class Config(BaseConfig):
             case ColumnRole.Group: return self.cols_group
             case ColumnRole.X: return self.cols_x
             case ColumnRole.Y: return self.cols_y
+            case ColumnRole.Z: return self.cols_z
         raise ValueError()
 
     def set_switches(self, role: ColumnRole, switches: list[ColumnSwitch]):
@@ -233,6 +246,7 @@ class Config(BaseConfig):
             case ColumnRole.Group: self.cols_group = switches
             case ColumnRole.X: self.cols_x = switches
             case ColumnRole.Y: self.cols_y = switches
+            case ColumnRole.Z: self.cols_z = switches
             case _: raise ValueError()
 
     def get_switch(self, role: ColumnRole, index: int) -> ColumnSwitch:

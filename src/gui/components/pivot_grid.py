@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..helpers.qt_helper import QtHelper
 from ..filter_dialog import FilterDialog
-from lib.config import Config, Sort, ConfigColumnSetup, ConfigFilter, FilterMode, ColumnRole, ColumnSwitch
+from lib.config import Config, Sort, ConfigColumnSetup, ConfigFilter, FilterMode, ColumnRole, ColumnSwitch, PlotType
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import *
@@ -195,16 +195,18 @@ class PivotGrid(QWidget):
                 active = False
             error = setup.error
             text2_items = []
-            filter_str = setup.filter.format()
-            if filter_str:
-                MAX_LEN = 25
-                if len(filter_str) > MAX_LEN:
-                    filter_str = filter_str[:MAX_LEN-1] + '…'
-                text2_items.append(filter_str)
-            if setup.sort == Sort.Asc:
-                text2_items.append('↓')
-            elif setup.sort == Sort.Desc:
-                text2_items.append('↑')
+            if setup.filter.mode != FilterMode.Off:
+                filter_str = setup.filter.format()
+                if filter_str:
+                    MAX_LEN = 25
+                    if len(filter_str) > MAX_LEN:
+                        filter_str = filter_str[:MAX_LEN-1] + '…'
+                    text2_items.append(filter_str)
+            if setup.sort != Sort.Off:
+                if setup.sort == Sort.Asc:
+                    text2_items.append('↓')
+                elif setup.sort == Sort.Desc:
+                    text2_items.append('↑')
             usages = []
             if role != ColumnRole.Unassigned:
                 if len([sw for sw in self._config.get_switches(ColumnRole.Group) if sw.col==col and sw.active]) > 0:
@@ -245,15 +247,32 @@ class PivotGrid(QWidget):
                 painter.setBrush(QColorConstants.White)
             painter.drawRoundedRect(outline_rect, 2.0, 2.0)
 
+            regular_font = painter.font()
+            bold_font = QFont(regular_font)
+            bold_font.setBold(True)
+
+            if setup.filter.mode != FilterMode.Off:
+                text_rect = QRect(option.rect.right()-25, option.rect.top()+2, 23, option.rect.height()-4)
+                painter.setPen(QColorConstants.Blue)
+                painter.setFont(bold_font)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight, 'F')
+            if setup.sort != Sort.Off:
+                text_rect = QRect(option.rect.right()-25, option.rect.top()+2, 23, option.rect.height()-4)
+                painter.setPen(QColorConstants.Blue)
+                painter.setFont(bold_font)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignBottom|Qt.AlignmentFlag.AlignRight, 'S')
+
+
             text_rect = QRect(option.rect)
             text_rect.adjust(8, 2, -8, -2)
+            painter.setFont(regular_font)
             painter.setPen(QColorConstants.DarkGray if (activatable and not active) else QColorConstants.Black)
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignTop, text)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignLeft, text)
             if text2:
                 text_rect = QRect(option.rect)
                 text_rect.adjust(8, 2, -8, -2)
                 painter.setPen(QColorConstants.DarkGray)
-                painter.drawText(text_rect, Qt.AlignmentFlag.AlignBottom, text2)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignBottom|Qt.AlignmentFlag.AlignLeft, text2)
 
             painter.restore()
 
@@ -289,6 +308,10 @@ class PivotGrid(QWidget):
             self.setDefaultDropAction(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
 
             self._paint_delegate = PivotGrid.ItemPaintDelegate(config)
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.updateGeometries()
+            self.viewport().update()
+
             self.setItemDelegate(self._paint_delegate)
             self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
@@ -350,6 +373,8 @@ class PivotGrid(QWidget):
                     painter.setPen(QColorConstants.DarkGray)
                     painter.setBrush(QColorConstants.White)
                     painter.drawRoundedRect(QRect(0, 0, 89, 24), 3, 3)
+                    painter.setPen(QColorConstants.Black)
+                    painter.drawText(QRect(1, 1, 87, 22), Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter, item.col)
                     painter.end()
                     drag.setPixmap(pixmap)
 
@@ -430,31 +455,48 @@ class PivotGrid(QWidget):
         self._ui_x_list.userChange.connect(self._on_user_change)
         self._ui_y_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Y, self._parent_dialog)
         self._ui_y_list.userChange.connect(self._on_user_change)
+        self._ui_z_list = PivotGrid.ColumnListWidget(self._config, ColumnRole.Z, self._parent_dialog)
+        self._ui_z_list.userChange.connect(self._on_user_change)
 
-        layout = QtHelper.layout_grid(
+        self._ui_cell_lt_widget = QtHelper.layout_widget_v('X', self._ui_x_list)
+        self._ui_cell_rt_widget = QtHelper.layout_widget_v('Y', self._ui_y_list)
+        self._ui_cell_lb_widget = QtHelper.layout_widget_v('Z', self._ui_z_list)
+        self._ui_cell_rb_widget = QtHelper.layout_widget_v()
+        
+        self._ui_layout = QtHelper.layout_grid(
             [
                 [
                     QtHelper.layout_v('All Columns', self._ui_all_list),
                     QtHelper.layout_v('Group', self._ui_group_list),
                 ],
                 [
-                    QtHelper.layout_v('X-Axis', self._ui_x_list),
-                    QtHelper.layout_v('Y-Axis', self._ui_y_list),
+                    self._ui_cell_lt_widget, self._ui_cell_rt_widget,
+                ],
+                [
+                    self._ui_cell_lb_widget, self._ui_cell_rb_widget,
                 ]
             ]
         )
-        layout.setRowStretch(0, 3)
-        layout.setRowStretch(1, 3)
-        layout.setRowStretch(2, 1)
-        layout.setRowStretch(3, 1)
-        self.setLayout(layout)
+        self.setLayout(self._ui_layout)
 
+        self._update_layout()
         self._update_lists()
     
 
     def setConfig(self, config: Config):
         self._config = config
+        self._update_layout()
         self._update_lists()
+    
+
+    @property
+    def _need_z(self) -> bool:
+        return self._config.plot.type in [PlotType.Scatter3D]
+
+
+    def _update_layout(self):
+        self._ui_cell_lb_widget.setVisible(self._need_z)
+        self._ui_cell_rb_widget.setVisible(False)
 
 
     def _update_lists(self):
@@ -474,11 +516,13 @@ class PivotGrid(QWidget):
         update_widget(self._ui_group_list)
         update_widget(self._ui_x_list)
         update_widget(self._ui_y_list)
+        if self._need_z:
+            update_widget(self._ui_z_list)
 
 
     def _on_user_change(self, col: str):
 
-        # ensure the as_* properties are unique
+        # ensure the <as_*>-properties are unique
         setup = self._config.find_setup(col)
         if setup.as_color:
             for setup in self._config.col_setups:
@@ -498,5 +542,4 @@ class PivotGrid(QWidget):
 
 
         self._update_lists()
-
         self.userChange.emit()

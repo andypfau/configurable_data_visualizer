@@ -95,7 +95,7 @@ class FilterEdit(QLineEdit):
             return
 
         try:
-            old_value = self._value.value
+            old_value = self._value.cmp_value
             self._value.parse_comparison(self.text())
             QtHelper.indicate_error(self, False)
             if self._value == old_value:
