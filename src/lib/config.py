@@ -72,6 +72,7 @@ class ConfigInput(BaseConfig):
     glob_regex_include: str = ''
     glob_regex_exclude: str = ''
     files: list[str] = []
+    csv_separator: str = ','
 
 
 

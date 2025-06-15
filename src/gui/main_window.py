@@ -73,7 +73,7 @@ class MainWindow(MainWindowUi):
                         if line.startswith('#'):
                             comment_list.append(line.strip())
                 comment = '\n'.join(comment_list)
-                df = pl.scan_csv(path, comment_prefix='#')
+                df = pl.scan_csv(path, comment_prefix='#', separator=self.config.input.csv_separator)
                 #print(df)
                 df = df.with_columns([
                     pl.lit(comment).alias('_file_comment'),
