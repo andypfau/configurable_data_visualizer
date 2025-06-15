@@ -73,7 +73,7 @@ class Plot:
         def make_triangle_plot(x: int, y: int, typ: MatrixTrianglePlotType):
             if typ == MatrixTrianglePlotType.Off:
                 return
-            loc = dict(row=x+1, col=y+1)
+            loc = dict(row=y+1, col=x+1)
             data_x = df.get_column(cols[x]).to_numpy()
             data_y = df.get_column(cols[y]).to_numpy()
             x0, x1 = np.min(data_x), np.max(data_x)
@@ -103,9 +103,9 @@ class Plot:
         fig = make_subplots(rows=dim, cols=dim)
         for x in range(dim):
             for y in range(dim):
-                if x < y:
+                if x > y:
                     make_triangle_plot(x, y, self._config.plot.matrix_lower_triangle_type)
-                elif x > y:
+                elif x < y:
                     make_triangle_plot(x, y, self._config.plot.matrix_upper_triangle_type)
                 else:
                     make_diagonal_plot(x)

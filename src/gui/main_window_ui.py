@@ -16,7 +16,7 @@ class MainWindowUi(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Plot Experiment')
+        self.setWindowTitle('Configurable Data Visualizer')
 
         self._ui_webview = QWebEngineView(parent=self)
         self._ui_webview.setMinimumSize(500,300)
