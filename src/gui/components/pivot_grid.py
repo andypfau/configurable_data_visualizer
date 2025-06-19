@@ -517,7 +517,7 @@ class PivotGrid(QWidget):
             widget.clear()
             widget.set_config(self._config)
             if widget._role == ColumnRole.Unassigned:
-                for setup in self._config.col_setups:
+                for setup in sorted(self._config.col_setups, key=lambda s: s.col.casefold()):
                     widget.addItem(PivotGrid.ColumnItem(setup.col, None, self._config, widget._role, self._parent_dialog))
             else:
                 for role_index,switch in enumerate(self._config.get_switches(widget._role)):

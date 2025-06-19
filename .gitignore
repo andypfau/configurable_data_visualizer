@@ -1,6 +1,7 @@
 **/__pycache__
 **/.mypy_cache
 **/*.json
+**/*.json~
 env/Pipfile.lock
 .vscode
 samples/*

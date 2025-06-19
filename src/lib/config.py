@@ -6,6 +6,7 @@ import enum
 import polars
 import pathlib
 import re
+import os
 from typing import Any, Callable, Self
 
 
@@ -194,19 +195,12 @@ class Config(BaseConfig):
 
 
     def __init__(self):
-        super().__init__(format_version_str='Plot Experiment Config v0.1')
-        self._all_files: list[str] = []
+        super().__init__(format_version_str='Configurable Data Visualizer v0.1')
         self._raw_df: polars.DataFrame|None = None
         self._df: polars.DataFrame|None = None
         self._all_columns: list[str] = []
         self._column_values: dict[str,list[str]] = {}
-
-    @property
-    def all_files(self) -> list[str]:
-        return self._all_files
-    @all_files.setter
-    def all_files(self, value: list[str]):
-        self._all_files = value
+        self.filename: str = ''
 
     @property
     def raw_df(self) -> polars.DataFrame:
@@ -279,3 +273,10 @@ class Config(BaseConfig):
                 raise RuntimeError()
             self._column_values[col] = list(sorted(self.raw_df.get_column(col).unique()))
         return self._column_values[col]
+
+    def autosave(self):
+        if not self.filename:
+                return
+        path = pathlib.Path(self.filename).absolute()
+        autosave_path = os.path.join(path.parent, '~' + path.name)
+        self.save(autosave_path)
